@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(export DIR=legged_lab/envs/ultra_game_yaw/datasets/motion_amp_expert)",
+      "Bash(python -)"
+    ]
+  }
+}

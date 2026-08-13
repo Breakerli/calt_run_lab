@@ -1,0 +1,21 @@
+package isaaclab_lcm;
+
+struct robot_state_t
+{
+    int64_t timestamp;
+    float base_lin_vel[3];   // yaw-frame linear velocity (vx, vy, vz)
+    float base_ang_vel[3];   // yaw-frame angular velocity
+    float cmd_vel[3];        // command: lin_vel_x, lin_vel_y, ang_vel_z (same as training)
+    float base_height[1];
+    float base_rpy[3];       // roll, pitch, yaw [rad], world frame (XYZ)
+    int32_t num_joints;
+    string joint_names[num_joints];
+    float joint_pos[num_joints];
+    float joint_vel[num_joints];
+    float joint_torque[num_joints];
+    float joint_vel_limit[num_joints];     // |ω| max [rad/s]
+    float joint_effort_limit[num_joints];  // |τ| max [Nm]
+    float base_lin_vel_est[3];
+    float foot_lin_vel[6];        // [L vx,vy,vz, R vx,vy,vz] world frame at ankle_pitch link
+    float foot_contact_force[6];  // [L fx,fy,fz, R fx,fy,fz] world frame net contact force
+}

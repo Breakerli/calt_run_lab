@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "isaaclab_lcm"
+version = "0.1.1"
+description = "LCM message types for Isaac Lab play/debug (robot_state_t)"
+requires-python = ">=3.10"
+dependencies = ["lcm>=1.5.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["isaaclab_lcm*"]
