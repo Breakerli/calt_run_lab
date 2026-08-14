@@ -93,7 +93,7 @@ CMD_DEADZONE = 0.05
 
 def parse_args() -> argparse.Namespace:
     default_policy = os.path.join(LEGGED_LAB_ROOT_DIR, "Exported_policy", "policy.pt")
-    default_model = os.path.join(LEGGED_LAB_ROOT_DIR, "legged_lab/assets/yrp03-v2/xml/yrp03-v2-zb.xml")
+    default_model = os.path.join(LEGGED_LAB_ROOT_DIR, "legged_lab/assets/yrp03_v2/xml/yrp03-v2-zb.xml")
 
     parser = argparse.ArgumentParser(description="Run sim2sim for ultra_GameYaw multi-AMP policy in MuJoCo.")
     parser.add_argument("--policy", type=str, default=default_policy, help="Path to TorchScript-exported policy.pt (from play.py).")

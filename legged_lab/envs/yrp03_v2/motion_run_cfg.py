@@ -32,7 +32,7 @@ from isaaclab_rl.rsl_rl import (  # noqa:F401
 )
 
 import legged_lab.mdp as mdp
-from legged_lab.assets.yrp03_v2 import YRP03_V2_CFG, AMP_LOADER_KWARGS
+from legged_lab.assets.yrp03_v2.yrp03_v2 import YRP03_V2_CFG, AMP_LOADER_KWARGS
 from legged_lab.envs.base.base_config import (
     ActionDelayCfg,
     BaseSceneCfg,

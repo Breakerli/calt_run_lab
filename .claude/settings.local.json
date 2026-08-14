@@ -14,7 +14,9 @@
       "Bash(python3 -)",
       "Bash(git show *)",
       "Read(//tmp/**)",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "Bash(python -m py_compile legged_lab/scripts/replay_yrp03_v2.py)",
+      "Bash(git mv *)"
     ]
   }
 }

@@ -99,7 +99,7 @@ TORQUE_CURVE_Y1_WAIST_YAW = 150
 
 YRP03_V2_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{ISAAC_ASSET_DIR}/yrp03-v2/usd/yrp03-v2.usd",
+        usd_path=f"{ISAAC_ASSET_DIR}/yrp03_v2/usd/yrp03-v2.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
