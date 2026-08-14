@@ -38,7 +38,7 @@ import legged_lab.mdp.observations as mdp_obs
 from legged_lab.mdp.commands import CustomVelocityCommand
 from legged_lab.utils.env_utils.scene import SceneCfg
 from rsl_rl.env import VecEnv
-from rsl_rl.utils import AMPLoaderDisplay, AMPLoaderYrp
+from rsl_rl.utils import AMPLoaderDisplay, AMPLoader
 
 
 class Yrp03V2MotionRunEnv(VecEnv):
@@ -123,11 +123,12 @@ class Yrp03V2MotionRunEnv(VecEnv):
         self.amp_loader_dict = {}
         for style_id in range(self.num_styles):
             style_key = f"style_{style_id}"
-            self.amp_loader_dict[style_id] = AMPLoaderYrp(
+            self.amp_loader_dict[style_id] = AMPLoader(
                 motion_files=self.cfg.amp_motion_files_dict[style_key],
                 device=self.device,
                 time_between_frames=self.physics_dt,
                 mirror_motion=getattr(self.cfg, "amp_mirror_expert_motion", False),
+                **self.cfg.amp_loader_kwargs,
             )
         self.motion_len = self.amp_loader_display.trajectory_num_frames[0]
 

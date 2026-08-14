@@ -32,7 +32,7 @@ from isaaclab_rl.rsl_rl import (  # noqa:F401
 )
 
 import legged_lab.mdp as mdp
-from legged_lab.assets.yrp03_v2 import YRP03_V2_CFG
+from legged_lab.assets.yrp03_v2 import YRP03_V2_CFG, AMP_LOADER_KWARGS
 from legged_lab.envs.base.base_config import (
     ActionDelayCfg,
     BaseSceneCfg,
@@ -415,6 +415,8 @@ class Yrp03V2MotionRunEnvCfg:
     amp_motion_files_display = [f"{_AMP_VIS}/run_14mps_play_newultra.txt"]
     amp_motion_files_dict = AMP_MOTION_FILES_DICT
     amp_mirror_expert_motion: bool = True
+    # 15-DoF / 42-dim AMP obs: 6-DoF legs (ankle_roll per leg), 与 agent cfg 保持一致。
+    amp_loader_kwargs: dict = AMP_LOADER_KWARGS
     device: str = "cuda:0"
     critic_privilege: CriticPrivilegeCfg = CriticPrivilegeCfg()
     scene: BaseSceneCfg = BaseSceneCfg(
@@ -701,9 +703,9 @@ class Yrp03V2MotionRunAgentCfg(RslRlOnPolicyRunnerCfg):
     # Multi-AMP (motion list: AMP_MOTION_FILES_DICT at module top)
     amp_motion_files_dict = AMP_MOTION_FILES_DICT
     # yrp03-v2 AMP obs is 15-DoF / 42-dim, so the runner must build its expert
-    # loader + discriminators with AMPLoaderYrp (not the default 13-DoF AMPLoader),
-    # otherwise the 42 vs 38 dim mismatch crashes on the first rollout (before iter0).
-    amp_loader_type = "yrp"
+    # loader + discriminators with the 6-DoF-leg layout (not the default 5-DoF),
+    # otherwise the 42 vs 38 dim mismatch crashes on the first rollout.
+    amp_loader_kwargs = AMP_LOADER_KWARGS
     amp_mirror_expert_motion = True
     amp_reward_coef_dict = {
         "style_0": 1.0,

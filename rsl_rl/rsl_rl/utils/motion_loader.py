@@ -29,7 +29,7 @@ class AMPLoader:
     The default layout is the 13-DoF UltraGameYaw robot: right_arm(1) +
     left_arm(1) + right_leg(5) + left_leg(5) + waist(1). For a 6-DoF-leg robot
     (e.g. yrp03-v2), pass ``leg_joint_size=6`` with the matching mirror flip
-    indices (see :class:`AMPLoaderYrp`).
+    indices (see ``leg_joint_size`` and ``leg_mirror_flip_indices``).
     """
 
     def __init__(

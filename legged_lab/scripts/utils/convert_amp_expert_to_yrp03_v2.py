@@ -7,7 +7,8 @@
 yrp03-v2 adds two ankle_roll joints (one per leg). Those joints do not exist in
 the original expert retargeting, so per the design they are zero-padded, inserted
 at the correct slot inside each leg block so the AMP feature order stays aligned
-with UltraGameYawMotionRunEnv.get_amp_obs_for_expert_trans / AMPLoaderYrp.
+with UltraGameYawMotionRunEnv.get_amp_obs_for_expert_trans / AMPLoader
+(6-DoF leg layout: leg_joint_size=6, leg_mirror_flip_indices=(0,1,5)).
 
 Original 38-col AMP frame layout (per env + AMPLoader):
     pos[0:13]  = [shoulder_r, shoulder_l,

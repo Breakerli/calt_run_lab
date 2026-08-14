@@ -13,7 +13,8 @@
       "Read(//home/robot02/calt01/wyx/ultra_run_lab_yrp/rsl_rl/rsl_rl/utils/**)",
       "Bash(python3 -)",
       "Bash(git show *)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(python -c ' *)"
     ]
   }
 }

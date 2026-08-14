@@ -19,7 +19,6 @@
 """Helper functions."""
 
 from .motion_loader import AMPLoader
-from .motion_loader_yrp import AMPLoaderYrp
 from .motion_loader_for_display import AMPLoaderDisplay
 from .utils import (
     Normalizer,
@@ -44,7 +43,6 @@ from .utils import (
 
 __all__ = [
     "AMPLoader",
-    "AMPLoaderYrp",
     "AMPLoaderDisplay",
     "Normalizer",
     "broadcast_log_dir_name",
