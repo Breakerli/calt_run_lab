@@ -700,6 +700,10 @@ class Yrp03V2MotionRunAgentCfg(RslRlOnPolicyRunnerCfg):
 
     # Multi-AMP (motion list: AMP_MOTION_FILES_DICT at module top)
     amp_motion_files_dict = AMP_MOTION_FILES_DICT
+    # yrp03-v2 AMP obs is 15-DoF / 42-dim, so the runner must build its expert
+    # loader + discriminators with AMPLoaderYrp (not the default 13-DoF AMPLoader),
+    # otherwise the 42 vs 38 dim mismatch crashes on the first rollout (before iter0).
+    amp_loader_type = "yrp"
     amp_mirror_expert_motion = True
     amp_reward_coef_dict = {
         "style_0": 1.0,

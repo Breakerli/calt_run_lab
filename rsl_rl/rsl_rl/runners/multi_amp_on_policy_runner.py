@@ -39,6 +39,7 @@ from rsl_rl.modules import (
 )
 from rsl_rl.utils import (
     AMPLoader,
+    AMPLoaderYrp,
     Normalizer,
     resolve_actor_obs_history_length,
     resolve_critic_obs_history_length,
@@ -187,9 +188,17 @@ class MultiAmpOnPolicyRunner:
         reward_coef_dict = train_cfg["amp_reward_coef_dict"]
         self.use_wgan = train_cfg.get("use_wgan_discriminator", False)
 
+        # Select AMP expert loader to match the env's AMP observation layout.
+        # Default "default" -> AMPLoader (13-DoF ultra, 38-dim). yrp03-v2 exposes
+        # 15 DoF / 42-dim AMP obs, so its agent cfg sets amp_loader_type="yrp" and
+        # must use AMPLoaderYrp here, otherwise discriminators are built for 38-dim
+        # while the env feeds 42-dim -> shape mismatch on the first rollout.
+        amp_loader_type = train_cfg.get("amp_loader_type", "default")
+        amp_loader_cls = AMPLoaderYrp if amp_loader_type == "yrp" else AMPLoader
+
         for style_id in range(self.env.num_styles):
             style_key = f"style_{style_id}"
-            amp_data = AMPLoader(
+            amp_data = amp_loader_cls(
                 device,
                 time_between_frames=self.env.step_dt,
                 preload_transitions=True,
