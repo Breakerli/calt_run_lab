@@ -717,4 +717,5 @@ class Yrp03V2MotionRunAgentCfg(RslRlOnPolicyRunnerCfg):
 
     resume = False  # GRU encoder is incompatible with MLP checkpoints
     load_run = ".*" # '2026-05-31_00-03-26' # '2026-05-29_11-03-16' #
-    load_checkpoint = "model_.*.pt"
+    # load_checkpoint = "model_.*.pt"
+    load_checkpoint = "model_400.pt"

@@ -2,7 +2,18 @@
   "permissions": {
     "allow": [
       "Bash(export DIR=legged_lab/envs/ultra_game_yaw/datasets/motion_amp_expert)",
-      "Bash(python -)"
+      "Bash(python -)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -c \"import sys; [print\\(p\\) for p in sys.path]\")",
+      "Bash(python3 -c \"import rsl_rl, sys; print\\(rsl_rl.__path__\\)\")",
+      "Bash(pip show *)",
+      "Read(//home/robot02/calt01/wyx/ultra_run_lab_yrp/**)",
+      "Read(//home/robot02/miniconda3/envs/ultra_run/lib/python3.11/site-packages/**)",
+      "Read(//home/robot02/calt01/wyx/ultra_run_lab_yrp/rsl_rl/rsl_rl/**)",
+      "Read(//home/robot02/calt01/wyx/ultra_run_lab_yrp/rsl_rl/rsl_rl/utils/**)",
+      "Bash(python3 -)",
+      "Bash(git show *)",
+      "Read(//tmp/**)"
     ]
   }
 }

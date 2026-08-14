@@ -24,28 +24,13 @@ import torch
 
 
 class AMPLoader:
-    # # Omni
-    # JOINT_POS_SIZE = 25
-    # JOINT_VEL_SIZE = 25
-    
-    # # Ultra
-    # JOINT_POS_SIZE = 16
-    # JOINT_VEL_SIZE = 16
-    
-    # Ultra 0513Yaw
-    JOINT_POS_SIZE = 13
-    JOINT_VEL_SIZE = 13
+    """Expert dataset providing AMP observations for a configurable joint layout.
 
-    END_EFFECTOR_POS_SIZE = 12
-
-    JOINT_POSE_START_IDX = 0
-    JOINT_POSE_END_IDX = JOINT_POSE_START_IDX + JOINT_POS_SIZE
-
-    JOINT_VEL_START_IDX = JOINT_POSE_END_IDX
-    JOINT_VEL_END_IDX = JOINT_VEL_START_IDX + JOINT_VEL_SIZE
-
-    END_POS_START_IDX = JOINT_VEL_END_IDX
-    END_POS_END_IDX = END_POS_START_IDX + END_EFFECTOR_POS_SIZE
+    The default layout is the 13-DoF UltraGameYaw robot: right_arm(1) +
+    left_arm(1) + right_leg(5) + left_leg(5) + waist(1). For a 6-DoF-leg robot
+    (e.g. yrp03-v2), pass ``leg_joint_size=6`` with the matching mirror flip
+    indices (see :class:`AMPLoaderYrp`).
+    """
 
     def __init__(
         self,
@@ -56,13 +41,46 @@ class AMPLoader:
         num_preload_transitions=1000000,
         motion_files=glob.glob("datasets/motion_amp_expert/*"),
         mirror_motion=False,
+        arm_joint_size=1,
+        leg_joint_size=5,
+        waist_joint_size=1,
+        leg_mirror_flip_indices=(0, 1),
+        mirror_waist=True,
     ):
         """Expert dataset provides AMP observations from Dog mocap dataset.
 
         time_between_frames: Amount of time in seconds between transition.
+
+        arm_joint_size: Number of joints per arm (default 1).
+        leg_joint_size: Number of joints per leg (5 for UltraGameYaw, 6 for
+            yrp03-v2 which adds an ankle_roll joint).
+        waist_joint_size: Number of waist joints (default 1).
+        leg_mirror_flip_indices: Indices, relative to the start of each leg
+            segment, whose sign is flipped when mirroring (roll/yaw axes).
+        mirror_waist: Whether to flip the sign of the waist joint(s) when
+            mirroring.
         """
         self.device = device
         self.time_between_frames = time_between_frames
+
+        self.arm_joint_size = arm_joint_size
+        self.leg_joint_size = leg_joint_size
+        self.waist_joint_size = waist_joint_size
+        self.leg_mirror_flip_indices = tuple(leg_mirror_flip_indices)
+        self.mirror_waist = mirror_waist
+
+        self.joint_pos_size = 2 * arm_joint_size + 2 * leg_joint_size + waist_joint_size
+        self.joint_vel_size = self.joint_pos_size
+        self.end_effector_pos_size = 12
+
+        self.joint_pose_start_idx = 0
+        self.joint_pose_end_idx = self.joint_pose_start_idx + self.joint_pos_size
+
+        self.joint_vel_start_idx = self.joint_pose_end_idx
+        self.joint_vel_end_idx = self.joint_vel_start_idx + self.joint_vel_size
+
+        self.end_pos_start_idx = self.joint_vel_end_idx
+        self.end_pos_end_idx = self.end_pos_start_idx + self.end_effector_pos_size
 
         # Values to store for each trajectory.
         self.trajectories = []
@@ -78,8 +96,12 @@ class AMPLoader:
             with open(motion_file) as f:
                 motion_json = json.load(f)
                 motion_data = np.array(motion_json["Frames"])
+                if motion_data.shape[1] < self.end_pos_end_idx:
+                    raise ValueError(
+                        f"AMP frame dim {motion_data.shape[1]} is smaller than expected {self.end_pos_end_idx}."
+                    )
                 motion_tensor = torch.tensor(
-                    motion_data[:, : AMPLoader.END_POS_END_IDX], dtype=torch.float32, device=device
+                    motion_data[:, : self.end_pos_end_idx], dtype=torch.float32, device=device
                 )
                 frame_duration = float(motion_json["FrameDuration"])
                 traj_len = (motion_data.shape[0] - 1) * frame_duration
@@ -142,29 +164,41 @@ class AMPLoader:
         tensor[..., start_a : start_a + length] = tensor[..., start_b : start_b + length]
         tensor[..., start_b : start_b + length] = tmp
 
-    @staticmethod
-    def mirror_amp_observations(frames):
-        """Mirror UltraGameYaw AMP observations in the fixed expert feature layout."""
+    def mirror_amp_observations(self, frames):
+        """Mirror AMP observations in the configured expert feature layout.
+
+        Joint layout (per pos/vel block): right_arm, left_arm, right_leg,
+        left_leg, waist. Mirroring swaps arms and legs, and negates the
+        configured roll/yaw axes (``leg_mirror_flip_indices`` per leg + waist).
+        """
         mirrored = frames.clone()
-        if mirrored.shape[-1] < AMPLoader.END_POS_END_IDX:
+        if mirrored.shape[-1] < self.end_pos_end_idx:
             raise ValueError(
-                f"AMP frame dim {mirrored.shape[-1]} is smaller than expected {AMPLoader.END_POS_END_IDX}."
+                f"AMP frame dim {mirrored.shape[-1]} is smaller than expected {self.end_pos_end_idx}."
             )
 
-        for offset in (AMPLoader.JOINT_POSE_START_IDX, AMPLoader.JOINT_VEL_START_IDX):
-            # AMP joint layout: right_arm, left_arm, right_leg[5], left_leg[5], waist_yaw.
-            AMPLoader._swap_segments(mirrored, offset + 0, offset + 1, 1)
-            AMPLoader._swap_segments(mirrored, offset + 2, offset + 7, 5)
-            mirrored[..., [offset + 2, offset + 3, offset + 7, offset + 8, offset + 12]] *= -1.0
+        arm, leg = self.arm_joint_size, self.leg_joint_size
+        for offset in (self.joint_pose_start_idx, self.joint_vel_start_idx):
+            self._swap_segments(mirrored, offset, offset + arm, arm)
+            leg_start = offset + 2 * arm
+            self._swap_segments(mirrored, leg_start, leg_start + leg, leg)
+            flip = [
+                side_start + i
+                for side_start in (leg_start, leg_start + leg)
+                for i in self.leg_mirror_flip_indices
+            ]
+            if self.mirror_waist:
+                flip.append(offset + 2 * arm + 2 * leg)
+            mirrored[..., flip] *= -1.0
 
         # End-effector layout: left_hand, right_hand, left_foot, right_foot in root frame.
-        AMPLoader._swap_segments(mirrored, AMPLoader.END_POS_START_IDX + 0, AMPLoader.END_POS_START_IDX + 3, 3)
-        AMPLoader._swap_segments(mirrored, AMPLoader.END_POS_START_IDX + 6, AMPLoader.END_POS_START_IDX + 9, 3)
+        self._swap_segments(mirrored, self.end_pos_start_idx + 0, self.end_pos_start_idx + 3, 3)
+        self._swap_segments(mirrored, self.end_pos_start_idx + 6, self.end_pos_start_idx + 9, 3)
         mirrored[..., [
-            AMPLoader.END_POS_START_IDX + 1,
-            AMPLoader.END_POS_START_IDX + 4,
-            AMPLoader.END_POS_START_IDX + 7,
-            AMPLoader.END_POS_START_IDX + 10,
+            self.end_pos_start_idx + 1,
+            self.end_pos_start_idx + 4,
+            self.end_pos_start_idx + 7,
+            self.end_pos_start_idx + 10,
         ]] *= -1.0
         return mirrored
 
@@ -249,19 +283,19 @@ class AMPLoader:
         n = self.trajectory_num_frames[traj_idxs]
         idx_low, idx_high = np.floor(p * n).astype(np.int64), np.ceil(p * n).astype(np.int64)
         all_frame_amp_starts = torch.zeros(
-            len(traj_idxs), AMPLoader.END_POS_END_IDX - AMPLoader.JOINT_POSE_START_IDX, device=self.device
+            len(traj_idxs), self.end_pos_end_idx - self.joint_pose_start_idx, device=self.device
         )
         all_frame_amp_ends = torch.zeros(
-            len(traj_idxs), AMPLoader.END_POS_END_IDX - AMPLoader.JOINT_POSE_START_IDX, device=self.device
+            len(traj_idxs), self.end_pos_end_idx - self.joint_pose_start_idx, device=self.device
         )
         for traj_idx in set(traj_idxs):
             trajectory = self.trajectories_full[traj_idx]
             traj_mask = traj_idxs == traj_idx
             all_frame_amp_starts[traj_mask] = trajectory[idx_low[traj_mask]][
-                :, AMPLoader.JOINT_POSE_START_IDX : AMPLoader.END_POS_END_IDX
+                :, self.joint_pose_start_idx : self.end_pos_end_idx
             ]
             all_frame_amp_ends[traj_mask] = trajectory[idx_high[traj_mask]][
-                :, AMPLoader.JOINT_POSE_START_IDX : AMPLoader.END_POS_END_IDX
+                :, self.joint_pose_start_idx : self.end_pos_end_idx
             ]
         blend = torch.tensor(p * n - idx_low, device=self.device, dtype=torch.float32).unsqueeze(-1)
 
@@ -301,8 +335,8 @@ class AMPLoader:
             An interpolation of the two frames.
         """
 
-        joints0, joints1 = AMPLoader.get_joint_pose(frame0), AMPLoader.get_joint_pose(frame1)
-        joint_vel_0, joint_vel_1 = AMPLoader.get_joint_vel(frame0), AMPLoader.get_joint_vel(frame1)
+        joints0, joints1 = self.get_joint_pose(frame0), self.get_joint_pose(frame1)
+        joint_vel_0, joint_vel_1 = self.get_joint_vel(frame0), self.get_joint_vel(frame1)
 
         blend_joint_q = self.slerp(joints0, joints1, blend)
         blend_joints_vel = self.slerp(joint_vel_0, joint_vel_1, blend)
@@ -314,8 +348,8 @@ class AMPLoader:
         for _ in range(num_mini_batch):
             if self.preload_transitions:
                 idxs = np.random.choice(self.preloaded_s.shape[0], size=mini_batch_size)
-                s = self.preloaded_s[idxs, AMPLoader.JOINT_POSE_START_IDX : AMPLoader.END_POS_END_IDX]
-                s_next = self.preloaded_s_next[idxs, AMPLoader.JOINT_POSE_START_IDX : AMPLoader.END_POS_END_IDX]
+                s = self.preloaded_s[idxs, self.joint_pose_start_idx : self.end_pos_end_idx]
+                s_next = self.preloaded_s_next[idxs, self.joint_pose_start_idx : self.end_pos_end_idx]
             else:
                 s, s_next = [], []
                 traj_idxs = self.weighted_traj_idx_sample_batch(mini_batch_size)
@@ -337,20 +371,20 @@ class AMPLoader:
     def num_motions(self):
         return len(self.trajectory_names)
 
-    def get_joint_pose(pose):
-        return pose[AMPLoader.JOINT_POSE_START_IDX : AMPLoader.JOINT_POSE_END_IDX]
+    def get_joint_pose(self, pose):
+        return pose[self.joint_pose_start_idx : self.joint_pose_end_idx]
 
-    def get_joint_pose_batch(poses):
-        return poses[:, AMPLoader.JOINT_POSE_START_IDX : AMPLoader.JOINT_POSE_END_IDX]
+    def get_joint_pose_batch(self, poses):
+        return poses[:, self.joint_pose_start_idx : self.joint_pose_end_idx]
 
-    def get_joint_vel(pose):
-        return pose[AMPLoader.JOINT_VEL_START_IDX : AMPLoader.JOINT_VEL_END_IDX]
+    def get_joint_vel(self, pose):
+        return pose[self.joint_vel_start_idx : self.joint_vel_end_idx]
 
-    def get_joint_vel_batch(poses):
-        return poses[:, AMPLoader.JOINT_VEL_START_IDX : AMPLoader.JOINT_VEL_END_IDX]
+    def get_joint_vel_batch(self, poses):
+        return poses[:, self.joint_vel_start_idx : self.joint_vel_end_idx]
 
-    def get_end_pos(pose):
-        return pose[AMPLoader.END_POS_START_IDX : AMPLoader.END_POS_END_IDX]
+    def get_end_pos(self, pose):
+        return pose[self.end_pos_start_idx : self.end_pos_end_idx]
 
-    def get_end_pos_batch(poses):
-        return poses[:, AMPLoader.END_POS_START_IDX : AMPLoader.END_POS_END_IDX]
+    def get_end_pos_batch(self, poses):
+        return poses[:, self.end_pos_start_idx : self.end_pos_end_idx]
