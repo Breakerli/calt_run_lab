@@ -279,3 +279,13 @@ ULTRA_GAME_YAW_CFG = ArticulationCfg(
         ),
     },
 )
+
+# AMP expert feature layout for this articulation. Only depends on the joint
+# structure (mirroring metadata), so it lives here next to YRP03_V2_CFG.
+# 15 DoF: right_arm(1) + left_arm(1) + right_leg(6) + left_leg(6) + waist(1).
+# leg_mirror_flip_indices: leg-local indices whose sign flips under left/right
+# mirror — hip_yaw(0), hip_roll(1), ankle_roll(5).
+AMP_LOADER_KWARGS = {
+    "leg_joint_size": 5,
+    "leg_mirror_flip_indices": (0, 1),
+}

@@ -280,6 +280,13 @@ class Yrp03V2MotionRunEnv(VecEnv):
         self.last_episode_flight_ratio = torch.zeros(
             self.num_envs, dtype=torch.float, device=self.device, requires_grad=False
         )
+        # 最近一次落脚的落脚点相对质心的前向位移（yaw 系，前向为正），供 foot_strike_com_offset 奖励读取
+        self._foot_strike_offset = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+        # 本局落脚点前向位移累计（用于监测点 Gait/foot_strike_com_offset 的局内均值）
+        self._foot_strike_offset_sum = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_episode_foot_strike_offset = torch.zeros(
+            self.num_envs, dtype=torch.float, device=self.device, requires_grad=False
+        )
         self.common_step_counter = 0
         self._curriculum_log_cache: dict[str, float] = {}
         if self.cfg.commands.use_curriculum:
@@ -808,6 +815,8 @@ class Yrp03V2MotionRunEnv(VecEnv):
         self._run_flight_steps[env_ids] = 0.0
         self._run_style_steps[env_ids] = 0.0
         self._gait_foot_contact_prev[env_ids] = True
+        self._foot_strike_offset[env_ids] = 0.0
+        self._foot_strike_offset_sum[env_ids] = 0.0
 
         self.scene.write_data_to_sim()
         self.sim.forward()
@@ -993,6 +1002,20 @@ class Yrp03V2MotionRunEnv(VecEnv):
             math_utils.yaw_quat(self.robot.data.root_quat_w), self.robot.data.root_lin_vel_w[:, :3]
         )
         self._run_forward_dist += (torch.clamp(vel_yaw[:, 0], min=0.0) * self.step_dt) * run_mask
+
+        # 落脚点相对质心的前向位移（yaw 系，前向为正），在落脚沿采样缓存
+        yaw_q = math_utils.yaw_quat(self.robot.data.root_quat_w)
+        rel = self.robot.data.body_pos_w[:, self.feet_body_ids, :] - self.robot.data.root_pos_w[:, :3][:, None, :]
+        rel_yaw = math_utils.quat_apply_inverse(
+            yaw_q[:, None, :].expand(-1, 2, -1).reshape(-1, 4), rel.reshape(-1, 3)
+        ).reshape(self.num_envs, 2, 3)
+        strike_x = rel_yaw[..., 0]  # (N,2) 前向为正
+        landed_x = torch.where(rising, strike_x, torch.full_like(strike_x, -1e9))
+        strike_offset = landed_x.max(dim=-1).values  # (N,)
+        did_land = rising.any(dim=-1) & (self.style_ids == 2)
+        self._foot_strike_offset = torch.where(did_land, strike_offset, self._foot_strike_offset)
+        self._foot_strike_offset_sum += strike_offset * did_land.float()
+
         self._gait_foot_contact_prev = contact
 
     def _reset_reward_lazy_buffers(self, env_ids: torch.Tensor) -> None:
@@ -1045,13 +1068,17 @@ class Yrp03V2MotionRunEnv(VecEnv):
         stride = 2.0 * self._run_forward_dist[vids] / self._run_step_count[vids].clamp(min=1.0)  # m
         flight = self._run_flight_steps[vids] / self._run_style_steps[vids].clamp(min=1.0)
 
+        strike_offset = self._foot_strike_offset_sum[vids] / self._run_step_count[vids].clamp(min=1.0)  # m
+
         self.last_episode_cadence[vids] = cadence
         self.last_episode_stride_length[vids] = stride
         self.last_episode_flight_ratio[vids] = flight
+        self.last_episode_foot_strike_offset[vids] = strike_offset
         return {
             "Gait/cadence": float(cadence.mean().item()),
             "Gait/stride_length": float(stride.mean().item()),
             "Gait/flight_ratio": float(flight.mean().item()),
+            "Gait/foot_strike_com_offset": float(strike_offset.mean().item()),
             "Gait/run_step_count": float(self._run_step_count[vids].mean().item()),
         }
 

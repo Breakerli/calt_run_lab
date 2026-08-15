@@ -350,6 +350,9 @@ class MultiAmpOnPolicyRunner:
             if not self.disable_logs:
                 print(f"[INFO] Iteration {it}: rollout...", flush=True)
             start = time.time()
+            # per-style amp (style) reward accumulation（每步均值，每次迭代清零）
+            amp_reward_step_sum = torch.zeros(self.env.num_styles, dtype=torch.float, device=self.device)
+            amp_reward_step_count = torch.zeros(self.env.num_styles, dtype=torch.float, device=self.device)
             with torch.inference_mode():
                 for _ in range(self.num_steps_per_env):
                     actions = self.alg.act(obs, privileged_obs, amp_obs)
@@ -403,14 +406,16 @@ class MultiAmpOnPolicyRunner:
                         style_next_amp_obs_pos = next_amp_obs_pos[idxs] if self.use_wgan else None  # type: ignore
                         task_rewards = rewards[idxs]
                         if self.use_wgan:
-                            total_reward = self.alg.discriminator_dict[style_key].predict_amp_reward_WGAN(
+                            total_reward, _, style_reward = self.alg.discriminator_dict[style_key].predict_amp_reward_WGAN(
                                 style_amp_obs,
                                 style_next_amp_obs,
                                 style_amp_obs_pos,  # type: ignore[arg-type]
                                 style_next_amp_obs_pos,  # type: ignore[arg-type]
                                 task_rewards,
                                 normalizer=self.alg.amp_normalizer_dict[style_key],
-                            )[0]
+                            )
+                            amp_reward_step_sum[style_id] += style_reward.sum()
+                            amp_reward_step_count[style_id] += len(idxs)
                         else:
                             total_reward = self.alg.discriminator_dict[style_key].predict_amp_reward(
                                 style_amp_obs,
@@ -584,6 +589,17 @@ class MultiAmpOnPolicyRunner:
             if self.logger_type != "wandb":
                 self.writer.add_scalar("Train/mean_reward/time", local_rew_mean, self.tot_time)
                 self.writer.add_scalar("Train/mean_episode_length/time", local_len_mean, self.tot_time)
+
+        # -- per-style amp (style) reward（每步均值，逐 style 分列）
+        if not self.disable_logs:
+            amp_step_sum = locs.get("amp_reward_step_sum")
+            amp_step_count = locs.get("amp_reward_step_count")
+            if amp_step_sum is not None and amp_step_count is not None:
+                per_style_mean = amp_step_sum / amp_step_count.clamp(min=1.0)
+                for style_id in range(self.env.num_styles):
+                    self.writer.add_scalar(f"Train/amp_reward_style_{style_id}", per_style_mean[style_id], locs["it"])
+                    if self.logger_type != "wandb":
+                        self.writer.add_scalar(f"Train/amp_reward_style_{style_id}/time", per_style_mean[style_id], self.tot_time)
 
         str = f" \033[1m Learning iteration {locs['it']}/{locs['tot_iter']} \033[0m "
 

@@ -180,15 +180,25 @@ class Yrp03V2RewardCfg:
             "style_mask": [2],
         },
     )
-    # 摆动脚腾空时间：同速度下腾空越长 → 步幅越大、步频越低（限制高频小碎步）。
-    feet_air_time_run = RewTerm(
-        func=mdp.feet_air_time_positive_biped,
-        weight=15.0,
+    # 前脚落脚点相对质心的前向位移：逼近目标（大步幅），落在质心后硬惩罚（会前倾失衡摔倒）。
+    # 替换旧的 feet_air_time_run（奖励腾空时间会诱导"原地跳跃"退化解）。
+    # target_stride：正向奖励的平移门控——本局平均步幅达到该值才全额发放，防"原地踏步领奖"。
+    foot_strike_com_offset = RewTerm(
+        func=mdp.foot_strike_com_offset,
+        weight=5.0,
         params={
-            "threshold": 0.4,
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=["ankle_roll.*"]),
+            "target_offset": 0.2,
+            "std": 0.1,
+            "behind_penalty": 2.0,
+            "target_stride": 0.5,
             "style_mask": [2],
         },
+    )
+    # 腾空占比约束：超过 0.7 惩罚（腾空只是手段、落脚点才是目的），防跳跃/坠落。
+    flight_ratio_neg = RewTerm(
+        func=mdp.flight_ratio_neg,
+        weight=-2.0,
+        params={"max_flight_ratio": 0.7, "style_mask": [2]},
     )
     feet_clearance_run = RewTerm(
         func=mdp.feet_clearance,
@@ -512,8 +522,10 @@ class Yrp03V2MotionRunEnvCfg:
             heading=(-math.pi / 2, math.pi / 2),
         ),
         use_curriculum=True,
-        curriculum_rwd_threshold=0.35,
-        curriculum_rwd_threshold_min=0.30,
+        # P3: 回调升速门槛（0.35→0.38 / 0.30→0.32），避免过松把速度推到策略无法稳定维持的水平。
+        # 上次 12.4m/s 处 track≈4.5 已贴着 gate≈4.70，升速后崩溃。
+        curriculum_rwd_threshold=0.38,
+        curriculum_rwd_threshold_min=0.32,
         curriculum_rwd_threshold_v_lo=5.0,
         curriculum_rwd_threshold_v_hi=15.0,
         curriculum_update_step=0.2,
@@ -745,6 +757,6 @@ class Yrp03V2MotionRunAgentCfg(RslRlOnPolicyRunnerCfg):
 
     resume = False  # GRU encoder is incompatible with MLP checkpoints
     load_run = ".*" # '2026-05-31_00-03-26' # '2026-05-29_11-03-16' #
-    load_checkpoint = "model_3200.pt"
+    # load_checkpoint = "model_5000.pt"
     # load_run="2026-08-14_21-01-35"
-    # load_checkpoint = "model_.*.pt"
+    load_checkpoint = "model_.*.pt"

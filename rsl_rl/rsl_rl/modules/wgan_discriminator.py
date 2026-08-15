@@ -178,6 +178,7 @@ class WGANDiscriminator(nn.Module):
             tuple:
                 - reward (torch.Tensor): Predicted AMP reward (optionally interpolated) with shape (batch_size,).
                 - output_neg (torch.Tensor): Raw discriminator output for policy states with shape (batch_size, 1).
+                - disc_reward (torch.Tensor): Pure style reward (before task_reward lerp) with shape (batch_size,).
         """
         # Reward is used during rollout collection; keep it gradient-free to avoid graph retention.
         with torch.no_grad():
@@ -203,11 +204,12 @@ class WGANDiscriminator(nn.Module):
             # score = D(x) - E[D(x_pos)], should be <= 0
             score = (output_neg - self.disc_pos_mean).clamp(max=0.0)
             # reward in (0, 1], scaled by configured AMP coefficient
-            reward = self.amp_reward_coef * torch.exp(score / 10)
+            disc_reward = self.amp_reward_coef * torch.exp(score / 10)
+            reward = disc_reward
             if self.task_reward_lerp > 0:
                 reward = self._lerp_reward(reward, task_reward.unsqueeze(-1))
             self.train()
-            return reward.squeeze(), output_neg
+            return reward.squeeze(), output_neg, disc_reward.squeeze()
 
     def _lerp_reward(self, disc_r, task_r):
         """
