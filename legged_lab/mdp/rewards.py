@@ -687,6 +687,31 @@ def feet_air_time_positive_biped(
     return reward * mask
 
 
+def cadence_neg(
+    env: BaseEnv | UltraMotionRunEnv,
+    target_cadence: float = 5.0,
+    style_mask: list[int] | None = None,
+) -> torch.Tensor:
+    """惩罚过高的步频（步/秒），间接鼓励更大步幅、更低步频。
+
+    使用逐步累计的 run style 步数与 run 时长计算局内平均步频（即 ``Gait/cadence``
+    同一口径）；超过 ``target_cadence`` 的相对幅度线性惩罚并封顶 1.0。
+    仅在 run style 生效，避免 stand/walk 拉低步频导致无惩罚。
+    """
+    if not hasattr(env, "_run_step_count") or not hasattr(env, "_run_style_steps"):
+        return torch.zeros(env.num_envs, device=env.device, dtype=torch.float32)
+    run_time = env._run_style_steps * env.step_dt
+    cadence = env._run_step_count / run_time.clamp(min=env.step_dt)  # steps/s
+    excess = (cadence / max(target_cadence, 1e-3) - 1.0).clamp(min=0.0).clamp(max=1.0)
+    if style_mask is None:
+        mask = torch.ones_like(env.style_ids, dtype=torch.float32)
+    else:
+        mask = torch.isin(env.style_ids, torch.tensor(style_mask, device=env.style_ids.device)).float()
+    # 步数足够才生效，避免 episode 初期少量步数导致步频尖峰（噪声惩罚）
+    enough = (env._run_step_count >= 4).float()
+    return excess * mask * enough
+
+
 def feet_clearance(
     env: BaseEnv | UltraMotionRunEnv,
     target_height: float = 0.08,

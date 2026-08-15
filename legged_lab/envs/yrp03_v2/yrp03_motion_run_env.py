@@ -263,6 +263,23 @@ class Yrp03V2MotionRunEnv(VecEnv):
         )
         # 距上次 episode 结束的 common step 数；0 表示刚结束一局
         self.last_episode_age = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
+        # ── 步态指标（run style 步频/步幅/腾空占比）逐步累计 + last-episode 缓存 ──
+        # 落脚判定的接触力阈值（N）：远低于站立支撑力、远高于传感器噪声。
+        self._gait_contact_threshold = 10.0
+        self._gait_foot_contact_prev = torch.zeros(
+            self.num_envs, 2, dtype=torch.bool, device=self.device, requires_grad=False
+        )
+        self._run_step_count = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+        self._run_forward_dist = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+        self._run_flight_steps = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+        self._run_style_steps = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_episode_cadence = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_episode_stride_length = torch.zeros(
+            self.num_envs, dtype=torch.float, device=self.device, requires_grad=False
+        )
+        self.last_episode_flight_ratio = torch.zeros(
+            self.num_envs, dtype=torch.float, device=self.device, requires_grad=False
+        )
         self.common_step_counter = 0
         self._curriculum_log_cache: dict[str, float] = {}
         if self.cfg.commands.use_curriculum:
@@ -762,6 +779,7 @@ class Yrp03V2MotionRunEnv(VecEnv):
                 terrain_levels = self.update_terrain_levels(env_ids)
                 self.extras["log"].update(terrain_levels)
         self._cache_episode_curriculum_metrics(env_ids)
+        self.extras["log"].update(self._cache_episode_gait_metrics(env_ids))
 
         self.scene.reset(env_ids)
         if "reset" in self.event_manager.available_modes:
@@ -784,6 +802,12 @@ class Yrp03V2MotionRunEnv(VecEnv):
         self.action_buffer.reset(env_ids)
         self.episode_length_buf[env_ids] = 0
         self._reset_reward_lazy_buffers(env_ids)
+        # 清零步态累计并假设落地（初始站姿双脚着地），避免下一局首步误判落脚沿
+        self._run_step_count[env_ids] = 0.0
+        self._run_forward_dist[env_ids] = 0.0
+        self._run_flight_steps[env_ids] = 0.0
+        self._run_style_steps[env_ids] = 0.0
+        self._gait_foot_contact_prev[env_ids] = True
 
         self.scene.write_data_to_sim()
         self.sim.forward()
@@ -837,6 +861,7 @@ class Yrp03V2MotionRunEnv(VecEnv):
         if "interval" in self.event_manager.available_modes:
             self.event_manager.apply(mode="interval", dt=self.step_dt)
         self._update_track_avg_velocities()
+        self._update_gait_metrics()
 
         self.reset_buf, self.time_out_buf = self.check_reset()
         reward_buf = self.reward_manager.compute(self.step_dt)
@@ -955,6 +980,21 @@ class Yrp03V2MotionRunEnv(VecEnv):
         self.avg_lin_vel_y_yaw.mul_(1.0 - alpha).add_(alpha * lin_vel_y)
         self.avg_ang_vel_z.mul_(1.0 - alpha).add_(alpha * ang_vel_z)
 
+    def _update_gait_metrics(self) -> None:
+        """逐步累计 run style 的步频/步幅/腾空统计（episode 结束时缓存为均值）。"""
+        net_forces = self.contact_sensor.data.net_forces_w_history[:, -1, self.feet_cfg.body_ids, :3]
+        contact = torch.norm(net_forces, dim=-1) > self._gait_contact_threshold  # (num_envs, 2)
+        rising = contact & ~self._gait_foot_contact_prev
+        run_mask = (self.style_ids == 2).float()  # 仅统计 run style，避免 stand/walk 污染
+        self._run_step_count += rising.any(dim=-1).float() * run_mask
+        self._run_flight_steps += (~contact.any(dim=-1)).float() * run_mask
+        self._run_style_steps += run_mask
+        vel_yaw = math_utils.quat_apply_inverse(
+            math_utils.yaw_quat(self.robot.data.root_quat_w), self.robot.data.root_lin_vel_w[:, :3]
+        )
+        self._run_forward_dist += (torch.clamp(vel_yaw[:, 0], min=0.0) * self.step_dt) * run_mask
+        self._gait_foot_contact_prev = contact
+
     def _reset_reward_lazy_buffers(self, env_ids: torch.Tensor) -> None:
         """reward 里 lazy-init 的滤波 buffer 在 reset 时清零，避免跨 episode 污染。"""
         if hasattr(self, "last_contacts_buffer"):
@@ -989,6 +1029,31 @@ class Yrp03V2MotionRunEnv(VecEnv):
         )
         self.last_episode_length[env_ids] = ep_len
         self.last_episode_age[env_ids] = 0
+
+    def _cache_episode_gait_metrics(self, env_ids: torch.Tensor) -> dict[str, float]:
+        """缓存并返回本局 run style 的步频/步幅/腾空占比（在 reward_manager.reset 清空前调用）。"""
+        if len(env_ids) == 0:
+            return {}
+        valid = (self.episode_length_buf[env_ids] > 0) & (self._run_style_steps[env_ids] > 0)
+        if not torch.any(valid):
+            return {}
+        vids = env_ids[valid]
+
+        run_time = self._run_style_steps[vids] * self.step_dt  # 秒
+        cadence = self._run_step_count[vids] / run_time.clamp(min=self.step_dt)  # steps/s
+        # 步幅 = 完整步态周期（左右各一步，共 2 步）内的前向位移
+        stride = 2.0 * self._run_forward_dist[vids] / self._run_step_count[vids].clamp(min=1.0)  # m
+        flight = self._run_flight_steps[vids] / self._run_style_steps[vids].clamp(min=1.0)
+
+        self.last_episode_cadence[vids] = cadence
+        self.last_episode_stride_length[vids] = stride
+        self.last_episode_flight_ratio[vids] = flight
+        return {
+            "Gait/cadence": float(cadence.mean().item()),
+            "Gait/stride_length": float(stride.mean().item()),
+            "Gait/flight_ratio": float(flight.mean().item()),
+            "Gait/run_step_count": float(self._run_step_count[vids].mean().item()),
+        }
 
     def _curriculum_rwd_ratio(self, lin_vel_x_max: float) -> float:
         """随 lin_vel_x 上限在 [v_lo, v_hi] 上线性插值跟踪 reward 门槛。"""

@@ -138,7 +138,7 @@ class Yrp03V2RewardCfg:
         func=mdp.track_lin_vel_x_yaw_frame_exp,
         weight=15.0,
         params={
-            "std": 0.6,
+            "std": 0.8,
             "std_speed_max": 1.0,
             "speed_walk": 1.0,
             "speed_max": 15.0,
@@ -179,6 +179,32 @@ class Yrp03V2RewardCfg:
             "proximity_height_scale": 0.05,
             "style_mask": [2],
         },
+    )
+    # 摆动脚腾空时间：同速度下腾空越长 → 步幅越大、步频越低（限制高频小碎步）。
+    feet_air_time_run = RewTerm(
+        func=mdp.feet_air_time_positive_biped,
+        weight=15.0,
+        params={
+            "threshold": 0.4,
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=["ankle_roll.*"]),
+            "style_mask": [2],
+        },
+    )
+    feet_clearance_run = RewTerm(
+        func=mdp.feet_clearance,
+        weight=2.0,
+        params={
+            "target_height": 0.15,
+            "std": 0.05,
+            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=["ankle_roll.*"]),
+            "style_mask": [2],
+        },
+    )
+    # 直接步频惩罚：局内平均步频超过 target_cadence（步/秒）时线性惩罚，压掉高频小碎步。
+    cadence_neg = RewTerm(
+        func=mdp.cadence_neg,
+        weight=-2.0,
+        params={"target_cadence": 3.0, "style_mask": [2]},
     )
 
     # ── style_1/style_2: locomotion command tracking ──
@@ -486,8 +512,8 @@ class Yrp03V2MotionRunEnvCfg:
             heading=(-math.pi / 2, math.pi / 2),
         ),
         use_curriculum=True,
-        curriculum_rwd_threshold=0.43,
-        curriculum_rwd_threshold_min=0.35,
+        curriculum_rwd_threshold=0.35,
+        curriculum_rwd_threshold_min=0.30,
         curriculum_rwd_threshold_v_lo=5.0,
         curriculum_rwd_threshold_v_hi=15.0,
         curriculum_update_step=0.2,
@@ -710,7 +736,7 @@ class Yrp03V2MotionRunAgentCfg(RslRlOnPolicyRunnerCfg):
     amp_reward_coef_dict = {
         "style_0": 1.0,
         "style_1": 0.8,
-        "style_2": 0.6,
+        "style_2": 0.4,
     }
     amp_num_preload_transitions = 200000
     amp_task_reward_lerp = 0.8
@@ -719,5 +745,6 @@ class Yrp03V2MotionRunAgentCfg(RslRlOnPolicyRunnerCfg):
 
     resume = False  # GRU encoder is incompatible with MLP checkpoints
     load_run = ".*" # '2026-05-31_00-03-26' # '2026-05-29_11-03-16' #
+    load_checkpoint = "model_3200.pt"
+    # load_run="2026-08-14_21-01-35"
     # load_checkpoint = "model_.*.pt"
-    load_checkpoint = "model_400.pt"

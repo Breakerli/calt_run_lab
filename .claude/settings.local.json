@@ -21,7 +21,9 @@
       "Bash(conda env *)",
       "Read(//home/robot02/miniconda3/envs/**)",
       "Read(//home/robot02/anaconda3/**)",
-      "Bash(grep -n \"_std_scaled_by_cmd_x\" legged_lab/mdp/rewards.py | head; echo \"---\"; sed -n '/def _std_scaled_by_cmd_x/,/^def /p' legged_lab/mdp/rewards.py | head -40)"
+      "Bash(grep -n \"_std_scaled_by_cmd_x\" legged_lab/mdp/rewards.py | head; echo \"---\"; sed -n '/def _std_scaled_by_cmd_x/,/^def /p' legged_lab/mdp/rewards.py | head -40)",
+      "Bash(grep -rn \"def reset\" /home/robot02/IsaacLab/source/isaaclab/isaaclab/managers/reward_manager.py)",
+      "Read(//home/robot02/IsaacLab/source/isaaclab/isaaclab/managers/**)"
     ],
     "additionalDirectories": [
       "/home/robot02/calt01/cpy/ultra_run_lab_yrp/legged_lab/mdp"
