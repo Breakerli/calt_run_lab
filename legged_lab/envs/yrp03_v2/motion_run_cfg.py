@@ -52,7 +52,7 @@ from legged_lab.envs.base.base_config import (
 from legged_lab.terrains import GRAVEL_TERRAINS_CFG, ROUGH_TERRAINS_CFG  # noqa:F401
 
 _AMP_EXPERT = "legged_lab/envs/yrp03_v2/datasets/motion_amp_expert"
-_AMP_VIS = "legged_lab/envs/ultra_game_yaw/datasets/motion_visualization"
+_AMP_VIS = "legged_lab/envs/yrp03_v2/datasets/motion_visualization"
 
 # Shared by Yrp03V2MotionRunEnvCfg (env expert sampling) and Yrp03V2MotionRunAgentCfg (discriminator).
 _AMP_MOTION_STAND = [f"{_AMP_EXPERT}/stand_ultra_yaw2.txt"]
