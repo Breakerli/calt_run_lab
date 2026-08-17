@@ -756,7 +756,7 @@ class Yrp03V2MotionRunAgentCfg(RslRlOnPolicyRunnerCfg):
     min_normalized_std = [0.05] * 15
 
     resume = False  # GRU encoder is incompatible with MLP checkpoints
-    load_run = ".*" # '2026-05-31_00-03-26' # '2026-05-29_11-03-16' #
+    # load_run = ".*" # '2026-05-31_00-03-26' # '2026-05-29_11-03-16' #
     # load_checkpoint = "model_5000.pt"
-    # load_run="2026-08-14_21-01-35"
+    load_run="2026-08-15_13-33-08"
     load_checkpoint = "model_.*.pt"

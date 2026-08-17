@@ -5,33 +5,38 @@
 # Copyright (c) 2025-2026, The Legged Lab Project Developers.
 # All rights reserved.
 #
-# This file is for ultra_GameYaw (13 DoF, ultra0523Yaw URDF / ultra_game_yaw MJCF):
-#   - loads legged_lab/assets/ultra_GameYaw/mjcf/ultra_game_yaw.xml by default
+# This file is for yrp03-v2 (15 DoF):
+#   - loads legged_lab/assets/yrp03_v2/xml/yrp03-v2-zb.xml by default
 #   - default policy path -> Exported_policy/policy.pt
-#   - actor obs layout matches ultra_motion_run_env.compute_current_observations
-#     (48 dims per step x history 10 = 480 for TorchScript policy input, no-gait)
-#   - joint-name mapping: MJCF sensor order != Isaac USD joint order (see below)
-"""Sim2Sim runner for ultra_GameYaw multi-AMP policy in MuJoCo.
+#   - actor obs layout matches yrp03_motion_run_env.compute_current_observations
+#     (54 dims per step x history 10 = 540 for TorchScript policy input, no-gait)
+#   - Isaac joint order auto-loaded from Exported_policy/isaac_joint_names.txt
+"""yrp03-v2 多风格策略的 MuJoCo Sim2Sim 运行脚本。
+
+实现参照 sim2sim_ryp01_v2.py：MJCF 的 motor actuator 全部改由 Python 显式 PD
+驱动（恒在线），并按 yrp03_v2.py CustomDelayedPDActuator 的 T-N 曲线（X1/X2/Y1/Y2）
+做力矩-速度包络限幅；复用 RYP 的命令输入、HIM 历史观测、--record-data 分析日志、
+LCM 发布和退出绘图流程。与旧脚本 sim2sim_yrp03_v2.py（position actuator 方案）并存，
+互不影响。运行示例：
 
 Usage:
   # 1) run play.py once; it exports and copies policy.pt -> Exported_policy/policy.pt
 
   # 2) run sim2sim:
-  python legged_lab/scripts/sim2sim_ultraYaw.py
-  python legged_lab/scripts/sim2sim_ultraYaw.py --policy Exported_policy/policy_baseline.pt
-  python legged_lab/scripts/sim2sim_ultraYaw.py --use_vel_cmd
-  python legged_lab/scripts/sim2sim_ultraYaw.py --use_vel_cmd --plot_joints
-  python legged_lab/scripts/sim2sim_ultraYaw.py --use_vel_cmd --plot_joints --no_show_plots
-  python legged_lab/scripts/sim2sim_ultraYaw.py --log-torques joint_torques.csv
-  python legged_lab/scripts/plot_sim2sim_ultra_yaw_csv.py joint_torques.csv
+  python legged_lab/scripts/sim2sim/sim2sim_yrp03_v2_new.py
+  python legged_lab/scripts/sim2sim/sim2sim_yrp03_v2_new.py --policy logs/yrp03_v2_run/<run>/exported/policy.pt
+  python legged_lab/scripts/sim2sim/sim2sim_yrp03_v2_new.py --use_vel_cmd
+  python legged_lab/scripts/sim2sim/sim2sim_yrp03_v2_new.py --use_vel_cmd --plot_joints --no_show_plots
+  python legged_lab/scripts/sim2sim/sim2sim_yrp03_v2_new.py --log-torques joint_torques.csv
+  python legged_lab/scripts/sim2sim/sim2sim_yrp03_v2_new.py --record-data
+  python legged_lab/scripts/sim2sim/sim2sim_yrp03_v2_new.py --record-data logs/my_speed_test.csv
 
   # 3) LCM 曲线（另开终端，默认 --source mujoco）:
-  python legged_lab/scripts/lcm_subscriber.py
-  python legged_lab/scripts/lcm_subscriber.py --source isaaclab   # play.py
+  python legged_lab/scripts/utils/lcm_subscriber.py
+  python legged_lab/scripts/utils/lcm_subscriber.py --source isaaclab   # play.py
 
-  Default Isaac joint order matches USD / `robot.data.joint_names` (not MJCF
-  sensor order). If yours differs, pass --isaac-joint-names-file (one name
-  per line, same 13 joints as training).
+  默认 Isaac 关节顺序来自 Exported_policy/isaac_joint_names.txt（play.py 自动导出）。
+  若文件缺失会回退到 ISAAC_JOINT_NAMES_DEFAULT 并打印醒目警告（该顺序只是猜测）。
 
 Controls:
   NumPad 8/2  -> vx +/- 0.5
@@ -65,6 +70,19 @@ try:
 except ImportError:
     PYGAME_AVAILABLE = False
 
+# --- MuJoCo 3.x 兼容 shim ---
+# mujoco-python-viewer 0.1.4（PyPI 最新版，已停更）仍按 MuJoCo 2.x 给
+# mjv_moveCamera 多传一个 scn 参数；3.x 已删除该参数，鼠标拖动/滚轮会 TypeError。
+# 在创建 viewer 前包装掉多余参数即可。注意 mjv_movePerturb 在 3.x 仍保留 scn，
+# 无需处理。本 shim 只影响本进程，不改动 conda 环境。
+if int(mujoco.__version__.split(".")[0]) >= 3:
+    _mjv_move_camera_orig = mujoco.mjv_moveCamera
+
+    def _mjv_move_camera_compat(m, action, reldx, reldy, scn, cam):
+        _mjv_move_camera_orig(m, action, reldx, reldy, cam)
+
+    mujoco.mjv_moveCamera = _mjv_move_camera_compat
+
 LEGGED_LAB_ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.realpath(__file__)))))
 if LEGGED_LAB_ROOT_DIR not in sys.path:
     sys.path.insert(0, LEGGED_LAB_ROOT_DIR)
@@ -77,15 +95,17 @@ from legged_lab.scripts.lcm_publisher import (
 
 
 DEFAULT_VEL_CMD_SEQUENCE = (
-    (100.0, (15.0, 0.0, 0.0)),
-    (1.0, (10.0, 0.0, 0.0)),
-    (100.0, (0.0, 0.0, 0.0)),
+    #(100.0, (15.0, 0.0, 0.0)),
+    (500.0, (10.0, 0.0, 0.0)),
+    #(100.0, (0.0, 0.0, 0.0)),
 )
 DEFAULT_VEL_CMD_SEQUENCE_HELP = " -> ".join(
     f"({cmd[0]:g}, {cmd[1]:g}, {cmd[2]:g}) m/s for {duration:g}s"
     for duration, cmd in DEFAULT_VEL_CMD_SEQUENCE
 )
-DEFAULT_PLOT_DIR = os.path.join(LEGGED_LAB_ROOT_DIR, "logs", "sim2sim_joy_plots")
+DEFAULT_PLOT_DIR = os.path.join(LEGGED_LAB_ROOT_DIR, "logs", "sim2sim_yrp03_v2_plots")
+DEFAULT_RECORD_DIR = os.path.join(LEGGED_LAB_ROOT_DIR, "logs", "sim2sim_yrp03_v2_records")
+DEFAULT_ISAAC_JOINT_NAMES_FILE = os.path.join(LEGGED_LAB_ROOT_DIR, "Exported_policy", "isaac_joint_names.txt")
 MAX_CMD = np.array([20.0, 0.5, 0.5], dtype=np.float64)
 MAX_CMD_VX_NEG = 0.5
 CMD_DEADZONE = 0.05
@@ -95,12 +115,24 @@ def parse_args() -> argparse.Namespace:
     default_policy = os.path.join(LEGGED_LAB_ROOT_DIR, "Exported_policy", "policy.pt")
     default_model = os.path.join(LEGGED_LAB_ROOT_DIR, "legged_lab/assets/yrp03_v2/xml/yrp03-v2-zb.xml")
 
-    parser = argparse.ArgumentParser(description="Run sim2sim for ultra_GameYaw multi-AMP policy in MuJoCo.")
+    parser = argparse.ArgumentParser(description="Run sim2sim for the yrp03-v2 multi-AMP policy in MuJoCo (explicit-PD motor version).")
     parser.add_argument("--policy", type=str, default=default_policy, help="Path to TorchScript-exported policy.pt (from play.py).")
-    parser.add_argument("--model", type=str, default=default_model, help="Path to ultra_GameYaw MJCF.")
+    parser.add_argument("--model", type=str, default=default_model, help="Path to the floating-base yrp03-v2 MJCF.")
     parser.add_argument("--duration", type=float, default=200.0, help="Sim seconds.")
-    parser.add_argument("--isaac-joint-names-file", type=str, default=os.path.join(LEGGED_LAB_ROOT_DIR, "Exported_policy", "isaac_joint_names.txt"), help="Text file: one Isaac joint name per line (same set as MJCF). Auto-written by play.py. Falls back to ISAAC_JOINT_NAMES_DEFAULT if missing.")
+    parser.add_argument("--isaac-joint-names-file", type=str, default=DEFAULT_ISAAC_JOINT_NAMES_FILE, help="Text file: one Isaac joint name per line (same set as MJCF). Auto-written by play.py. Falls back to ISAAC_JOINT_NAMES_DEFAULT if missing.")
     parser.add_argument("--log-torques", type=str, default=None, metavar="CSV", help="Save base/cmd vel, per-joint q/qd/tau and limits to CSV (MuJoCo actuator order). One row per physics step. Written on exit.")
+    parser.add_argument(
+        "--record-data",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="CSV",
+        help=(
+            "Record one analysis row per 100 Hz policy step: style/cmd/yaw/error/HIM plus "
+            "per-joint action, target, position, velocity and torque. Without a path, writes "
+            f"a timestamped CSV under {DEFAULT_RECORD_DIR}."
+        ),
+    )
     parser.add_argument(
         "--plot_joints",
         action="store_true",
@@ -111,11 +143,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--use_vel_cmd", "--use-vel-cmd", action="store_true", help=f"Use predefined velocity commands instead of joystick/keyboard input: {DEFAULT_VEL_CMD_SEQUENCE_HELP}.")
     parser.add_argument(
         "--explicit-actuator",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help=(
-            "Convert the MJCF <position> actuators to torque (motor) actuators at "
-            "runtime (XML untouched) and drive joints with an explicit PD + T-N "
-            "clip that mirrors ultra_game_yaw.py CustomDelayedPDActuator."
+            "Use explicit PD + T-N clip torque control for the yrp03-v2 motor actuators "
+            "(required). The default is enabled; --no-explicit-actuator is rejected."
         ),
     )
     args, unknown = parser.parse_known_args()
@@ -133,12 +165,13 @@ def parse_args() -> argparse.Namespace:
 # ---------------------------------------------------------------------------
 # Joint order: keep these consistent with the IsaacLab training environment.
 #
-# MUJOCO_JOINT_NAMES: order of <jointpos> / <jointvel> in ultra_game_yaw.xml
-#   (URDF chain order in ultra0523Yaw.urdf).
+# MUJOCO_JOINT_NAMES: order of <jointpos>, <jointvel> and <motor> in
+#   yrp03-v2-zb.xml (left leg 6 DoF, right leg 6 DoF, shoulders, waist).
 #
-# ISAAC_JOINT_NAMES_DEFAULT: `robot.data.joint_names` from IsaacLab / USD
-#   (yaw joints + waist first, then rolls, arms, then pitch/knee/ankle chains).
-#   If your build differs, use --isaac-joint-names-file.
+# ISAAC_JOINT_NAMES_DEFAULT: `robot.data.joint_names` from IsaacLab / USD.
+#   Only known at runtime; this is the order play.py exported to
+#   Exported_policy/isaac_joint_names.txt, kept here as fallback. If your build
+#   differs, pass --isaac-joint-names-file.
 # ---------------------------------------------------------------------------
 MUJOCO_JOINT_NAMES = [
     "hip_yaw_l_joint",
@@ -158,10 +191,6 @@ MUJOCO_JOINT_NAMES = [
     "waist_yaw_joint",
 ]
 
-# NOTE: yrp03-v2 Isaac USD joint order is only known at runtime. This is a
-# best-guess BFS-style fallback ONLY; the correct order is auto-loaded from
-# Exported_policy/isaac_joint_names.txt (written by play.py). If that file is
-# missing, sim2sim prints a loud warning and uses this guess (likely wrong).
 ISAAC_JOINT_NAMES_DEFAULT = [
     "hip_yaw_l_joint",
     "hip_yaw_r_joint",
@@ -180,7 +209,7 @@ ISAAC_JOINT_NAMES_DEFAULT = [
     "ankle_roll_r_joint",
 ]
 
-# Isaac velocity_limit_sim (rad/s) from ultra_game_yaw.py — MJCF has no joint vel limits.
+# Isaac velocity_limit_sim (rad/s) from assets/yrp03_v2/yrp03_v2.py — MJCF has no joint vel limits.
 JOINT_VELOCITY_LIMIT_RAD_S: dict[str, float] = {
     "hip_yaw_l_joint": 20.9,
     "hip_yaw_r_joint": 20.9,
@@ -194,56 +223,24 @@ JOINT_VELOCITY_LIMIT_RAD_S: dict[str, float] = {
     "ankle_pitch_r_joint": 26.1,
     "ankle_roll_l_joint": 26.1,
     "ankle_roll_r_joint": 26.1,
-    "waist_yaw_joint": 20.9,
     "shoulder_pitch_l_joint": 26.1,
     "shoulder_pitch_r_joint": 26.1,
+    "waist_yaw_joint": 20.9,
 }
 
-# Legacy one-leg T-N curve params kept for reference. Runtime plotting uses
-# ACTUATOR_PARAMS so all actuator joints are included.
-TN_CURVE_PARAMS: dict[str, tuple[float, float, float, float]] = {
-    "hip_yaw_l_joint": (10.0, 20.9, 150, 250),
-    "hip_roll_l_joint": (12.0, 18.8, 600, 657),
-    "hip_pitch_l_joint": (17.0, 26.1, 600, 657),
-    "knee_pitch_l_joint": (17.0, 26.1, 600, 657),
-    "ankle_pitch_l_joint": (17.0, 26.1, 350, 400),
-}
-
-# Old per-joint ACTUATOR_PARAMS kept commented for reference.
-# ACTUATOR_PARAMS: dict[str, dict[str, float]] = {
-#     "hip_yaw_l_joint": {"kp": 405.596, "kd": 13.356, "X1": 10.0, "X2": 20.9, "Y1": 150.0, "Y2": 250.0},
-#     "hip_roll_l_joint": {"kp": 672.489, "kd": 39.519, "X1": 12.0, "X2": 18.8, "Y1": 600.0, "Y2": 657.0},
-#     "hip_pitch_l_joint": {"kp": 672.489, "kd": 39.519, "X1": 17.0, "X2": 26.1, "Y1": 600.0, "Y2": 657.0},
-#     "knee_pitch_l_joint": {"kp": 672.489, "kd": 39.519, "X1": 17.0, "X2": 26.1, "Y1": 600.0, "Y2": 657.0},
-#     "ankle_pitch_l_joint": {"kp": 103.725, "kd": 12.263, "X1": 17.0, "X2": 26.1, "Y1": 350.0, "Y2": 400.0},
-#     "hip_yaw_r_joint": {"kp": 405.596, "kd": 13.356, "X1": 10.0, "X2": 20.9, "Y1": 150.0, "Y2": 250.0},
-#     "hip_roll_r_joint": {"kp": 672.489, "kd": 39.519, "X1": 12.0, "X2": 18.8, "Y1": 600.0, "Y2": 657.0},
-#     "hip_pitch_r_joint": {"kp": 672.489, "kd": 39.519, "X1": 17.0, "X2": 26.1, "Y1": 600.0, "Y2": 657.0},
-#     "knee_pitch_r_joint": {"kp": 672.489, "kd": 39.519, "X1": 17.0, "X2": 26.1, "Y1": 600.0, "Y2": 657.0},
-#     "ankle_pitch_r_joint": {"kp": 103.725, "kd": 12.263, "X1": 17.0, "X2": 26.1, "Y1": 350.0, "Y2": 400.0},
-#     "waist_yaw_joint": {"kp": 192.911, "kd": 9.211, "X1": 10.0, "X2": 20.9, "Y1": 150.0, "Y2": 250.0},
-#     "shoulder_pitch_l_joint": {"kp": 40.589, "kd": 3.876, "X1": 13.0, "X2": 26.1, "Y1": 100.0, "Y2": 140.0},
-#     "shoulder_pitch_r_joint": {"kp": 40.589, "kd": 3.876, "X1": 13.0, "X2": 26.1, "Y1": 100.0, "Y2": 140.0},
-# }
-
+# PD gains from yrp03_v2.py (stiffness/damping of CustomDelayedPDActuatorCfg).
 JOINT_TYPE_PD_PARAMS: dict[str, dict[str, float]] = {
-    # "hip_yaw": {"kp": 405.596, "kd": 13.356},
-    # "hip_roll": {"kp": 672.489, "kd": 39.519},
-    # "hip_pitch": {"kp": 672.489, "kd": 39.519},
-    # "knee_pitch": {"kp": 672.489, "kd": 39.519},
-    # "ankle_pitch": {"kp": 103.725, "kd": 12.263},
-    # "shoulder_pitch": {"kp": 40.589, "kd": 3.876},
-    # "waist_yaw": {"kp": 192.911, "kd": 9.211},
     "hip_yaw": {"kp": 500.0, "kd": 10.0},
     "hip_roll": {"kp": 700.0, "kd": 20.0},
-    "hip_pitch": {"kp": 700.0, "kd": 20.0},
-    "knee_pitch": {"kp": 700.0, "kd": 20.0},
+    "hip_pitch": {"kp": 700.0, "kd": 10.0},
+    "knee_pitch": {"kp": 700.0, "kd": 10.0},
     "ankle_pitch": {"kp": 100.0, "kd": 6.0},
     "ankle_roll": {"kp": 40.0, "kd": 2.0},
     "shoulder_pitch": {"kp": 50.0, "kd": 3.0},
     "waist_yaw": {"kp": 400.0, "kd": 8.0},
 }
 
+# T-N 曲线参数（X1/X2/Y1/Y2）from yrp03_v2.py：X2 = velocity_limit_sim，Y2 = effort_limit_sim。
 JOINT_TYPE_TN_PARAMS: dict[str, dict[str, float]] = {
     "hip_yaw": {"X1": 10.0, "X2": 20.9, "Y1": 150.0, "Y2": 250.0},
     "hip_roll": {"X1": 12.0, "X2": 18.8, "Y1": 600.0, "Y2": 657.0},
@@ -253,6 +250,19 @@ JOINT_TYPE_TN_PARAMS: dict[str, dict[str, float]] = {
     "ankle_roll": {"X1": 17.0, "X2": 26.1, "Y1": 30.0, "Y2": 30.0},
     "shoulder_pitch": {"X1": 13.0, "X2": 26.1, "Y1": 100.0, "Y2": 140.0},
     "waist_yaw": {"X1": 10.0, "X2": 20.9, "Y1": 150.0, "Y2": 250.0},
+}
+
+# 关节 armature（转子惯量）from yrp03_v2.py；yrp03-v2 MJCF 未带 armature，
+# 运行时由 _init_explicit_actuator 注入 loaded model，与 Isaac 训练动力学对齐。
+JOINT_TYPE_ARMATURE: dict[str, float] = {
+    "hip_yaw": 0.048865,
+    "hip_roll": 0.40318,
+    "hip_pitch": 0.40318,
+    "knee_pitch": 0.40318,
+    "ankle_pitch": 0.21448,
+    "ankle_roll": 0.1,
+    "shoulder_pitch": 0.041125,
+    "waist_yaw": 0.048865,
 }
 
 JOINT_TO_TYPE: dict[str, str] = {
@@ -279,6 +289,8 @@ def build_actuator_params_from_joint_types() -> dict[str, dict[str, float]]:
         joint_name: {
             **JOINT_TYPE_PD_PARAMS[joint_type],
             **JOINT_TYPE_TN_PARAMS[joint_type],
+            "armature": JOINT_TYPE_ARMATURE[joint_type],
+            "velocity_limit": JOINT_VELOCITY_LIMIT_RAD_S[joint_name],
         }
         for joint_name, joint_type in JOINT_TO_TYPE.items()
     }
@@ -296,25 +308,6 @@ def get_tn_curve_params(joint_name: str) -> tuple[float, float, float, float]:
     return params["X1"], params["X2"], params["Y1"], params["Y2"]
 
 
-def override_position_actuator_pd(
-    model,
-    actuator_names: list[str],
-    params: dict[str, dict[str, float]],
-) -> None:
-    """Override MuJoCo <position> actuator kp/kv in an already-loaded MjModel."""
-    if model.nu != len(actuator_names):
-        raise ValueError(f"model.nu={model.nu} but got {len(actuator_names)} actuator names")
-
-    for i, name in enumerate(actuator_names):
-        if name not in params:
-            raise KeyError(f"No actuator PD params for {name!r}")
-        kp = params[name]["kp"]
-        kd = params[name]["kd"]
-        model.actuator_gainprm[i, 0] = kp
-        model.actuator_biasprm[i, 1] = -kp
-        model.actuator_biasprm[i, 2] = -kd
-
-
 def predefined_velocity_command(elapsed_time_s: float) -> np.ndarray:
     elapsed_time_s = max(0.0, elapsed_time_s)
     segment_start_s = 0.0
@@ -325,10 +318,10 @@ def predefined_velocity_command(elapsed_time_s: float) -> np.ndarray:
         segment_start_s = segment_end_s
     return np.zeros(3, dtype=np.float64)
 
-# Style hysteresis (aligned with motion_run_cfg StyleFromCommandCfg)
-STAND_ENTER = 0.08
-STAND_EXIT = 0.12
-RUN_ENTER = 1.05
+# Style hysteresis (aligned with yrp03_v2/motion_run_cfg.py StyleFromCommandCfg)
+STAND_ENTER = 0.05
+STAND_EXIT = 0.08
+RUN_ENTER = 1.0
 RUN_EXIT = 0.85
 
 # obs_scales.commands from motion_run_cfg.py NormalizationCfg
@@ -405,6 +398,19 @@ def load_joint_names_file(path: str) -> list[str]:
     return names
 
 
+def resolve_record_data_path(path: str | None) -> str | None:
+    if path is None:
+        return None
+    if path.strip():
+        resolved = os.path.abspath(os.path.expanduser(path))
+    else:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        resolved = os.path.join(DEFAULT_RECORD_DIR, f"yrp03_v2_analysis_{timestamp}.csv")
+    if os.path.splitext(resolved)[1].lower() != ".csv":
+        raise ValueError(f"--record-data output must use a .csv extension: {resolved}")
+    return resolved
+
+
 def _joint_pos_subplot_shape(num_joints: int) -> tuple[int, int]:
     if num_joints <= 1:
         return max(1, num_joints), 1
@@ -465,25 +471,26 @@ def set_mujoco_integrator(model, integrator: str) -> None:
 
 
 class SimToSimCfg:
-    """Configuration. MUST match ultra_game_yaw motion_run_cfg.py / env."""
+    """Configuration. MUST match yrp03_v2/motion_run_cfg.py and its environment."""
 
     class sim:
         sim_duration = 100.0
         num_action = 15
         num_styles = 3
-        # 3+3+3 + 13+13+13 (no-gait, no style one-hot; style from |cmd_x| internally for AMP only)
-        # Must match play/export actor (48 = 3+3+3 + 13*3); critic/height-scan not used.
+        # 3+3+3 + 15+15+15 (no-gait, no style one-hot; style from |cmd_x| internally for AMP only)
+        # Must match play/export actor (54 = 3+3+3 + 15*3); critic/height-scan not used.
         num_obs_per_step = 54
         actor_obs_history_length = 10
+        # MuJoCo 用 1 ms 物理子步保证 stiff PD 稳定，同时保持训练的 10 ms 策略周期。
         dt = 0.001
         integrator = "implicitfast"  # "euler" "rk4" "implicit" implicitfast
-        decimation = 10  # policy 100 Hz, must match motion_run_cfg
+        decimation = 10  # MuJoCo 1000 Hz, policy 100 Hz
         clip_observations = 100.0
         clip_actions = 100.0
         action_scale = 0.25
 
     class robot:
-        # ultra_game_yaw.py InitialStateCfg.pos[2] / MJCF base_link spawn height
+        # yrp03_v2.py InitialStateCfg.pos[2] / MJCF pelvis spawn height
         base_height_init: float = 1.20
 
     class normalization:
@@ -504,7 +511,7 @@ class SimToSimCfg:
 
 
 class MujocoRunner:
-    """MuJoCo sim2sim driver for ultra_GameYaw multi-AMP policy."""
+    """MuJoCo sim2sim driver for the yrp03-v2 multi-AMP policy."""
 
     def __init__(
         self,
@@ -513,13 +520,16 @@ class MujocoRunner:
         model_path: str,
         isaac_joint_names: list[str],
         torque_log_path: str | None = None,
+        record_data_path: str | None = None,
         plot_joints: bool = False,
         plot_dir: str | None = None,
         show_plots: bool = True,
-        explicit_actuator: bool = False,
+        explicit_actuator: bool = True,
         use_vel_cmd: bool = False,
     ):
         self.cfg = cfg
+        if not explicit_actuator:
+            raise ValueError("yrp03-v2 MJCF uses motor actuators; explicit PD control cannot be disabled.")
         self.plot_joints = plot_joints
         self.plot_dir = plot_dir
         self.show_plots = show_plots
@@ -555,11 +565,13 @@ class MujocoRunner:
         self.exit_flag = False
         self.torque_log_path = torque_log_path
         self._torque_log: list[list[float]] = []
+        self.record_data_path = record_data_path
+        self._analysis_log: list[list[float | int | str]] = []
+        self._analysis_step = 0
+        self._episode_id = -1
 
         self.init_variables(isaac_joint_names)
-        self._override_xml_position_actuator_pd()
-        if self.explicit_actuator:
-            self._init_explicit_actuator()
+        self._init_explicit_actuator()
         if self.torque_log_path is not None or self.plot_joints:
             if self.model.nu != len(self.mujoco_joint_names):
                 raise RuntimeError(
@@ -571,6 +583,11 @@ class MujocoRunner:
             print(
                 f"[INFO] Joint state logging enabled -> {self.torque_log_path} "
                 f"(yaw-frame base/cmd vel + q, qd, tau + limits; MuJoCo actuator order)"
+            )
+        if self.record_data_path is not None:
+            print(
+                f"[INFO] 100 Hz analysis recording enabled -> {self.record_data_path} "
+                "(style/cmd/yaw/error/HIM + per-joint action/q_des/q/qd/tau)"
             )
         if self.plot_joints:
             print(
@@ -590,7 +607,7 @@ class MujocoRunner:
         self.dof_vel = np.zeros(self.cfg.sim.num_action)
         self.action = np.zeros(self.cfg.sim.num_action)
 
-        # Default DOF pos in MUJOCO order. Match ultra_game_yaw.py InitialStateCfg.joint_pos.
+        # Default DOF pos in MUJOCO order. Match yrp03_v2.py InitialStateCfg.joint_pos.
         self.default_dof_pos = np.array(
             [
                 0.0,  # hip_yaw_l_joint
@@ -616,19 +633,14 @@ class MujocoRunner:
         self.mujoco_to_isaac_idx, self.isaac_to_mujoco_idx = build_idx_mappings(
             self.mujoco_joint_names, self.isaac_joint_names
         )
-        # qpos addresses per MuJoCo-ordered joint. On yrp03-v2 the body topology
-        # order (waist, shoulders, leg_l, leg_r) differs from the sensor/actuator
-        # order, so reset writes each joint by address instead of a contiguous slice.
-        self._qpos_adr = []
-        for _name in self.mujoco_joint_names:
-            _jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, _name)
-            if _jid < 0:
-                raise RuntimeError(f"MJCF has no joint named {_name!r}")
-            self._qpos_adr.append(int(self.model.jnt_qposadr[_jid]))
         self._joint_vel_limits_lcm = [
             JOINT_VELOCITY_LIMIT_RAD_S[name] for name in self.mujoco_joint_names
         ]
-        self._joint_effort_limits_lcm = self._read_joint_effort_limits()
+        # LCM 限幅线使用 Isaac T-N 曲线的 Y2（effort_limit_sim），与 Python 限幅一致。
+        self._joint_effort_limits_lcm = [
+            ACTUATOR_PARAMS[name]["Y2"] for name in self.mujoco_joint_names
+        ]
+        self._validate_sensor_layout()
         self._print_joint_mapping()
 
         self.episode_length_buf = 0
@@ -640,20 +652,11 @@ class MujocoRunner:
             (self.cfg.sim.num_obs_per_step * self.cfg.sim.actor_obs_history_length,),
             dtype=np.float32,
         )
+        self._obs_history_initialized = False
         self.num_styles = self.cfg.sim.num_styles
         self.style_ids = 0
         self.style_onehot = np.zeros(self.num_styles, dtype=np.float32)
         self.style_onehot[self.style_ids] = 1.0
-
-    def _read_joint_effort_limits(self) -> list[float]:
-        """Max |tau| per joint from MJCF actuatorfrcrange (for LCM subscriber limit lines)."""
-        limits: list[float] = []
-        for name in self.mujoco_joint_names:
-            jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
-            if jid < 0:
-                raise RuntimeError(f"MJCF has no joint named {name!r}")
-            limits.append(float(max(abs(self.model.jnt_actfrcrange[jid, 0]), abs(self.model.jnt_actfrcrange[jid, 1]))))
-        return limits
 
     def _print_joint_mapping(self) -> None:
         print("=" * 72)
@@ -665,17 +668,12 @@ class MujocoRunner:
             print(f"{mj_idx:>6} {mj_name:<28} -> {isaac_idx:>9} {self.isaac_joint_names[isaac_idx]:<28}")
         print("=" * 72)
 
-    def _actuator_names(self) -> list[str]:
-        return [
-            mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
-            for i in range(self.model.nu)
-        ]
-
-    def _override_xml_position_actuator_pd(self) -> None:
-        """Override loaded XML <position> actuator kp/kv with ultra_game_yaw.py gains."""
-        actuator_names = self._actuator_names()
-        override_position_actuator_pd(self.model, actuator_names, ACTUATOR_PARAMS)
-        print("[INFO] XML position actuator PD overridden from ultra_game_yaw.py frequency config.")
+    def _validate_sensor_layout(self) -> None:
+        expected = [f"{name.removesuffix('_joint')}_pos" for name in self.mujoco_joint_names]
+        expected += [f"{name.removesuffix('_joint')}_vel" for name in self.mujoco_joint_names]
+        actual = [mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_SENSOR, i) for i in range(2 * self.cfg.sim.num_action)]
+        if actual != expected:
+            raise RuntimeError(f"yrp03-v2 joint sensor order mismatch. Expected {expected}, got {actual}")
 
     _VEL_HEADER_EVERY_N_LINES = 20
     _vel_print_line_count = 0
@@ -711,30 +709,34 @@ class MujocoRunner:
         self._vel_print_line_count += 1
 
     def _update_style_from_command(self) -> None:
-        """Style 滞回（与训练 env 一致，仅用于日志）。"""
-        speed_x = float(np.abs(self.command_vel[0]))
+        """Style 滞回（与 yrp03_motion_run_env._update_style_from_command 一致，仅用于日志）。"""
+        cmd = self.command_vel
+        speed_x = float(np.abs(cmd[0]))
+        active_enter = bool(np.any(np.abs(cmd) >= STAND_ENTER))
+        active_exit = bool(np.any(np.abs(cmd) >= STAND_EXIT))
+        is_stand = bool(np.all(np.abs(cmd) < STAND_ENTER))
+
         prev = int(self.style_ids)
+        new = prev
         if prev == 0:
             if speed_x >= RUN_ENTER:
-                self.style_ids = 2
-            elif speed_x >= STAND_EXIT:
-                self.style_ids = 1
-            else:
-                self.style_ids = 0
+                new = 2
+            elif active_exit:
+                new = 1
         elif prev == 2:
-            if speed_x < STAND_ENTER:
-                self.style_ids = 0
-            elif speed_x < RUN_EXIT:
-                self.style_ids = 1
-            else:
-                self.style_ids = 2
+            if speed_x < RUN_EXIT:
+                new = 1
+            if not active_enter:
+                new = 0
         else:
             if speed_x >= RUN_ENTER:
-                self.style_ids = 2
-            elif speed_x < STAND_ENTER:
-                self.style_ids = 0
-            else:
-                self.style_ids = 1
+                new = 2
+            if not active_enter:
+                new = 0
+        if is_stand:
+            new = 0
+
+        self.style_ids = new
         self.style_onehot = np.zeros(self.num_styles, dtype=np.float32)
         self.style_onehot[self.style_ids] = 1.0
 
@@ -774,8 +776,15 @@ class MujocoRunner:
             ],
             axis=0,
         ).astype(np.float32)
-        self.obs_history = np.roll(self.obs_history, shift=-self.cfg.sim.num_obs_per_step)
-        self.obs_history[-self.cfg.sim.num_obs_per_step :] = obs.copy()
+        if not self._obs_history_initialized:
+            # Isaac Lab CircularBuffer.append() fills every history slot with the
+            # first post-reset observation; zero-padding here creates an unseen
+            # HIM/GRU startup state and can destabilize the policy immediately.
+            self.obs_history[:] = np.tile(obs, self.cfg.sim.actor_obs_history_length)
+            self._obs_history_initialized = True
+        else:
+            self.obs_history = np.roll(self.obs_history, shift=-self.cfg.sim.num_obs_per_step)
+            self.obs_history[-self.cfg.sim.num_obs_per_step :] = obs
 
         return np.clip(self.obs_history, -self.clip_obs, self.clip_obs)
 
@@ -785,8 +794,7 @@ class MujocoRunner:
         return actions_scaled[self.mujoco_to_isaac_idx] + self.default_dof_pos
 
     def _init_explicit_actuator(self) -> None:
-        """Convert in-memory <position> actuators to torque (motor) actuators and
-        cache per-actuator PD/T-N params + qpos/qvel addresses (actuator order).
+        """Validate yrp03-v2 motors and cache the Isaac-matched explicit PD/T-N params.
 
         Only the loaded ``MjModel`` is modified; the XML file is left untouched.
         After this, ``data.ctrl`` is interpreted as a direct joint torque, and we
@@ -794,6 +802,8 @@ class MujocoRunner:
         """
         m = self.model
         n = m.nu
+        if n != self.cfg.sim.num_action:
+            raise RuntimeError(f"yrp03-v2 MJCF must expose {self.cfg.sim.num_action} motors, got {n}.")
         self._exp_qpos_adr = np.zeros(n, dtype=int)
         self._exp_dof_adr = np.zeros(n, dtype=int)
         self._exp_kp = np.zeros(n, dtype=np.float64)
@@ -804,10 +814,17 @@ class MujocoRunner:
         self._exp_y2 = np.zeros(n, dtype=np.float64)
 
         for i in range(n):
-            name = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
-            jid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, name)
+            actuator_name = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
+            jid = int(m.actuator_trnid[i, 0])
             if jid < 0:
-                raise RuntimeError(f"Actuator {name!r} is not attached to a joint.")
+                raise RuntimeError(f"Actuator {actuator_name!r} is not attached to a joint.")
+            name = mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_JOINT, jid)
+            expected_name = self.mujoco_joint_names[i]
+            if name != expected_name:
+                raise RuntimeError(
+                    f"yrp03-v2 actuator order mismatch at index {i}: expected joint {expected_name!r}, "
+                    f"actuator {actuator_name!r} drives {name!r}."
+                )
             self._exp_qpos_adr[i] = m.jnt_qposadr[jid]
             self._exp_dof_adr[i] = m.jnt_dofadr[jid]
             if name not in ACTUATOR_PARAMS:
@@ -819,21 +836,28 @@ class MujocoRunner:
             self._exp_x2[i] = p["X2"]
             self._exp_y1[i] = p["Y1"]
             self._exp_y2[i] = p["Y2"]
+            # XML joint damping matches the old hardware config, not Isaac kd. Disable the
+            # passive copy because the explicit PD below already applies -kd*qd.
+            m.dof_damping[self._exp_dof_adr[i]] = 0.0
+            # MJCF 未带 armature；注入 Isaac armature（转子惯量）以对齐训练动力学。
+            m.dof_armature[self._exp_dof_adr[i]] = p["armature"]
 
-            # position-servo -> motor: ctrl is now the raw applied force/torque.
+            # Keep the XML untouched on disk; ensure the loaded model uses direct torque.
             m.actuator_gaintype[i] = mujoco.mjtGain.mjGAIN_FIXED
             m.actuator_biastype[i] = mujoco.mjtBias.mjBIAS_NONE
             m.actuator_gainprm[i, :] = 0.0
             m.actuator_gainprm[i, 0] = 1.0
             m.actuator_biasprm[i, :] = 0.0
-            # position actuators (autolimits) clamp ctrl to the joint range; for a
-            # torque command that range is meaningless, so disable ctrl clamping.
-            m.actuator_ctrllimited[i] = 0
-            m.actuator_ctrlrange[i, :] = 0.0
+            # MJCF ctrlrange/actuatorfrcrange 是旧硬件限幅（如 hip_yaw ±190），比 Isaac
+            # T-N 曲线的 Y2 更紧。放宽到 Isaac effort_limit_sim，让 Python T-N 限幅成为唯一
+            # 约束，与训练时 CustomDelayedPDActuator 行为一致。
+            m.actuator_ctrllimited[i] = 1
+            m.actuator_ctrlrange[i, :] = (-self._exp_y2[i], self._exp_y2[i])
+            m.jnt_actfrcrange[jid, :] = (-self._exp_y2[i], self._exp_y2[i])
 
         print(
-            "[INFO] Explicit actuator enabled: <position> -> torque (motor) at runtime; "
-            "PD + T-N clip computed in Python (joint actuatorfrcrange still clamps)."
+            "[INFO] yrp03-v2 explicit actuator enabled: motor torque = kp*(q_des-q)-kd*qd, "
+            "clipped by the Isaac T-N curve; Isaac armature injected into dof_armature."
         )
 
     def torque_control(self) -> np.ndarray:
@@ -874,6 +898,7 @@ class MujocoRunner:
                 raise RuntimeError(f"MJCF has no joint named {name!r}")
             self._log_q_min[i] = float(self.model.jnt_range[jid, 0])
             self._log_q_max[i] = float(self.model.jnt_range[jid, 1])
+            # jnt_actfrcrange 已在 _init_explicit_actuator 放宽到 Isaac effort_limit_sim。
             self._log_tau_min[i] = float(self.model.jnt_actfrcrange[jid, 0])
             self._log_tau_max[i] = float(self.model.jnt_actfrcrange[jid, 1])
             vel_lim = JOINT_VELOCITY_LIMIT_RAD_S.get(name)
@@ -966,6 +991,91 @@ class MujocoRunner:
             f"[INFO] Wrote {len(self._torque_log)} joint-state samples to {self.torque_log_path}"
         )
 
+    @staticmethod
+    def _analysis_csv_header(joint_names: list[str]) -> list[str]:
+        header = [
+            "time",
+            "policy_step",
+            "episode_id",
+            "episode_step",
+            "style_id",
+            "style_name",
+            "cmd_vx",
+            "cmd_vy",
+            "cmd_wz",
+            "yaw_vx",
+            "yaw_vy",
+            "yaw_wz",
+            "err_vx",
+            "err_vy",
+            "err_wz",
+            "him_vx",
+            "him_vy",
+            "him_vz",
+            "base_x",
+            "base_y",
+            "base_z",
+            "base_qw",
+            "base_qx",
+            "base_qy",
+            "base_qz",
+            "projected_gravity_x",
+            "projected_gravity_y",
+            "projected_gravity_z",
+        ]
+        for name in joint_names:
+            header.extend([f"action_{name}", f"q_des_{name}", f"q_{name}", f"qd_{name}", f"tau_{name}"])
+        return header
+
+    def _record_analysis_data(self, est_vel: list[float] | None) -> None:
+        n = self.cfg.sim.num_action
+        q = np.asarray(self.data.sensordata[:n], dtype=np.float64)
+        qd = np.asarray(self.data.sensordata[n : 2 * n], dtype=np.float64)
+        tau = np.asarray(self.data.actuator_force, dtype=np.float64)
+        q_des = self.position_control()
+        lin_yaw, ang_yaw = mujoco_root_vel_yaw_frame(self.data.qpos, self.data.qvel)
+        cmd = np.asarray(self.command_vel, dtype=np.float64)
+        measured = np.array([lin_yaw[0], lin_yaw[1], ang_yaw[2]], dtype=np.float64)
+        error = cmd - measured
+        him = np.full(3, np.nan, dtype=np.float64) if est_vel is None else np.asarray(est_vel, dtype=np.float64)
+        if him.shape != (3,):
+            raise RuntimeError(f"HIM estimated velocity must have shape (3,), got {him.shape}")
+        quat_wxyz = np.asarray(self.data.qpos[3:7], dtype=np.float64)
+        quat_xyzw = quat_wxyz[[1, 2, 3, 0]]
+        projected_gravity = self.quat_rotate_inverse(quat_xyzw, np.array([0.0, 0.0, -1.0]))
+        style_name = {0: "stand", 1: "walk", 2: "run"}.get(int(self.style_ids), f"style_{self.style_ids}")
+        row: list[float | int | str] = [
+            float(self.data.time),
+            self._analysis_step,
+            self._episode_id,
+            int(self.episode_length_buf),
+            int(self.style_ids),
+            style_name,
+            *cmd.tolist(),
+            *measured.tolist(),
+            *error.tolist(),
+            *him.tolist(),
+            *np.asarray(self.data.qpos[:3], dtype=np.float64).tolist(),
+            *quat_wxyz.tolist(),
+            *projected_gravity.tolist(),
+        ]
+        for i in range(n):
+            row.extend([float(self.action[i]), float(q_des[i]), float(q[i]), float(qd[i]), float(tau[i])])
+        self._analysis_log.append(row)
+        self._analysis_step += 1
+
+    def _write_analysis_log(self) -> None:
+        if self.record_data_path is None or not self._analysis_log:
+            return
+        out_dir = os.path.dirname(os.path.abspath(self.record_data_path))
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        with open(self.record_data_path, "w", newline="", encoding="utf-8") as stream:
+            writer = csv.writer(stream)
+            writer.writerow(self._analysis_csv_header(self.mujoco_joint_names))
+            writer.writerows(self._analysis_log)
+        print(f"[INFO] Wrote {len(self._analysis_log)} policy-step analysis samples to {self.record_data_path}")
+
     def run(self) -> None:
         self.setup_keyboard_listener()
         self.listener.start()
@@ -1030,6 +1140,8 @@ class MujocoRunner:
                     if self._him_est_vel
                     else None
                 )
+                if self.record_data_path is not None:
+                    self._record_analysis_data(est_vel)
                 publish_mujoco_state(
                     self.data,
                     self.cfg.sim.num_action,
@@ -1070,11 +1182,12 @@ class MujocoRunner:
         mujoco.mj_resetData(self.model, self.data)
         self.data.qpos[0:3] = np.array([0.0, 0.0, self.cfg.robot.base_height_init])
         self.data.qpos[3:7] = np.array([1.0, 0.0, 0.0, 0.0])  # identity quat (w, x, y, z)
-        # topology order != sensor order on yrp03-v2; write each joint by qpos address.
-        for _adr, _val in zip(self._qpos_adr, self.default_dof_pos):
-            self.data.qpos[_adr] = _val
+        # yrp03-v2 的 body 拓扑顺序（waist、shoulders、腿链）与 sensor/actuator 顺序
+        # 不同，必须按每个关节的 qpos 地址写默认值，不能用连续切片。
+        self.data.qpos[self._exp_qpos_adr] = self.default_dof_pos
         mujoco.mj_forward(self.model, self.data)
 
+        self._episode_id += 1
         self.episode_length_buf = 0
         self.action = np.zeros(self.cfg.sim.num_action)
         self.command_vel = np.array([0.0, 0.0, 0.0])
@@ -1087,6 +1200,7 @@ class MujocoRunner:
             (self.cfg.sim.num_obs_per_step * self.cfg.sim.actor_obs_history_length,),
             dtype=np.float32,
         )
+        self._obs_history_initialized = False
         print("[INFO] Simulation reset")
 
     def _get_glfw_window(self):
@@ -1106,6 +1220,7 @@ class MujocoRunner:
 
     def cleanup(self) -> None:
         self._write_torque_log()
+        self._write_analysis_log()
         self.exit_flag = True
         if self.listener is not None:
             self.listener.stop()
@@ -1373,6 +1488,11 @@ class MujocoRunner:
 
 if __name__ == "__main__":
     args = parse_args()
+    try:
+        record_data_path = resolve_record_data_path(args.record_data)
+    except ValueError as exc:
+        print(f"[ERROR] {exc}", file=sys.stderr)
+        sys.exit(2)
 
     if not os.path.isfile(args.policy):
         print(f"[ERROR] Policy file not found: {args.policy}", file=sys.stderr)
@@ -1417,6 +1537,7 @@ if __name__ == "__main__":
         model_path=args.model,
         isaac_joint_names=isaac_joint_names,
         torque_log_path=args.log_torques,
+        record_data_path=record_data_path,
         plot_joints=args.plot_joints,
         plot_dir=args.plot_dir,
         show_plots=not args.no_show_plots,

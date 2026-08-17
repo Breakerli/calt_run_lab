@@ -28,7 +28,8 @@
       "Read(//home/robot02/**)",
       "Bash(grep -nA 25 \"def quat_apply_inverse\" IsaacLab-2.1.0/source/isaaclab/isaaclab/utils/math.py)",
       "Bash(cd /home/robot02; grep -rn \"def quat_apply_inverse\\\\|quat_apply_inverse\" IsaacLab-2.1.0/source/isaaclab/isaaclab/utils/math.py | head; echo \"---\"; grep -rn \"def quat_apply\\\\b\\\\|def quat_apply_inverse\\\\|def quat_apply_yaw\\\\|def yaw_quat\" IsaacLab-2.1.0/source/isaaclab/isaaclab/utils/math.py)",
-      "Bash(cd /home/robot02; grep -rn \"def quat_apply_inverse\\\\|quat_apply_inverse\" IsaacLab/source/isaaclab/isaaclab/utils/math.py IsaacLab-2.1.0/source/isaaclab/isaaclab/utils/math.py 2>/dev/null; echo \"=== which isaaclab is imported ===\"; grep -rn \"isaaclab\" /home/robot02/calt01/cpy/ultra_run_lab_yrp/legged_lab/envs/yrp03_v2/yrp03_motion_run_env.py | head -3)"
+      "Bash(cd /home/robot02; grep -rn \"def quat_apply_inverse\\\\|quat_apply_inverse\" IsaacLab/source/isaaclab/isaaclab/utils/math.py IsaacLab-2.1.0/source/isaaclab/isaaclab/utils/math.py 2>/dev/null; echo \"=== which isaaclab is imported ===\"; grep -rn \"isaaclab\" /home/robot02/calt01/cpy/ultra_run_lab_yrp/legged_lab/envs/yrp03_v2/yrp03_motion_run_env.py | head -3)",
+      "Bash(python -m py_compile legged_lab/envs/yrp03_v2/motion_run_cfg.py rsl_rl/rsl_rl/runners/multi_amp_on_policy_runner.py)"
     ],
     "additionalDirectories": [
       "/home/robot02/calt01/cpy/ultra_run_lab_yrp/legged_lab/mdp"

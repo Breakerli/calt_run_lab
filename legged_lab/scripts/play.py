@@ -73,6 +73,7 @@ from legged_lab.utils.play_viewport_camera import apply_viewport_camera_patch, s
 apply_viewport_camera_patch()
 from legged_lab.utils.exporter import export_policy_as_jit, export_policy_as_onnx
 from isaaclab_tasks.utils import get_checkpoint_path
+from isaaclab.utils import math as math_utils
 
 from legged_lab.envs import *  # noqa:F401, F403
 from legged_lab.utils.cli_args import update_rsl_rl_cfg
@@ -188,8 +189,8 @@ def play():
             float(torch.empty(1).uniform_(r.ang_vel_z[0], r.ang_vel_z[1]).item()),
         )
 
-    play_cmd_vx, play_cmd_vy, play_cmd_wz = _sample_play_cmd_from_ranges()
-    # print(f"[Play] sampled command (vx, vy, wz) = ({play_cmd_vx}, {play_cmd_vy}, {play_cmd_wz})")
+    play_cmd = dict(zip(("vx", "vy", "wz"), _sample_play_cmd_from_ranges()))
+    cmd_manual = [False]  # 键盘改过指令后置 True，之后不再每局重采样（list 包一层便于闭包修改）
 
     env_class = task_registry.get_task_class(env_class_name)
     env = env_class(env_cfg, args_cli.headless)
@@ -272,12 +273,35 @@ def play():
     if not args_cli.headless:
         from legged_lab.utils.keyboard import Keyboard
 
-        keyboard = Keyboard(env)  # noqa:F841
+        # --- 键盘实时调速：↑/↓ vx±0.5，←/→ wz±0.2；改过后不再每局重采样指令 ---
+        CMD_LIMITS = {"vx": (-1.0, 15.0, 0.5), "wz": (-1.0, 1.0, 0.2)}
+
+        def _bump_cmd(key, sign):
+            lo, hi, step = CMD_LIMITS[key]
+            play_cmd[key] = float(np.clip(play_cmd[key] + sign * step, lo, hi))
+            cmd_manual[0] = True
+            print(f"[Play] command -> vx={play_cmd['vx']:.2f} vy={play_cmd['vy']:.2f} wz={play_cmd['wz']:.2f}")
+
+        keyboard = Keyboard(  # noqa:F841
+            env,
+            key_callbacks={
+                "UP": lambda: _bump_cmd("vx", 1.0),
+                "DOWN": lambda: _bump_cmd("vx", -1.0),
+                "LEFT": lambda: _bump_cmd("wz", 1.0),
+                "RIGHT": lambda: _bump_cmd("wz", -1.0),
+            },
+        )
         # 必须把订阅 handle 存到一个变量里，否则会被 GC 取消订阅。
         # 默认 follow=False：进 play 时鼠标可自由拖动，按 F 切到自动跟随。
         camera_follow_sub = setup_camera_follow_toggle(default_on=False)  # noqa:F841
+        print("[Play] 键盘: ↑/↓ vx±0.5, ←/→ wz±0.2, R 重置, F 相机跟随")
 
     obs, _ = env.get_observations()
+
+    # --- 速度指令 vs 实际质心速度打印（每 0.5s 一次，EMA 平滑） ---
+    step_count = 0
+    vel_ema = np.zeros(3)  # yaw 系实际速度 EMA: vx, vy, wz
+    log_every = max(1, int(0.5 / float(env.step_dt)))
 
     video_recorder = None
     if args_cli.video:
@@ -306,20 +330,18 @@ def play():
                     env.command_generator.command[:, 1] = y_vel_cmd
                     env.command_generator.command[:, 2] = yaw_vel_cmd
                 obs, _, _, _ = env.step(actions)
-                # 每步钉死；episode 首步按 ranges 重新 uniform 采样
+                # 每步钉死；episode 首步按 ranges 重新 uniform 采样（键盘手动改过则不再重采样）
                 if not joystick_opened:
-                    if env.episode_length_buf[0] == 1:
-                        play_cmd_vx, play_cmd_vy, play_cmd_wz = _sample_play_cmd_from_ranges()
-                        print(
-                            f"[Play] resampled command (vx, vy, wz) = ({play_cmd_vx}, {play_cmd_vy}, {play_cmd_wz})"
-                        )
-                    env.command_generator.vel_command_b[:, 0] = play_cmd_vx
-                    env.command_generator.vel_command_b[:, 1] = play_cmd_vy
-                    env.command_generator.vel_command_b[:, 2] = play_cmd_wz
+                    if env.episode_length_buf[0] == 1 and not cmd_manual[0]:
+                        play_cmd.update(zip(("vx", "vy", "wz"), _sample_play_cmd_from_ranges()))
+                        print(f"[Play] resampled command (vx, vy, wz) = {tuple(play_cmd.values())}")
+                    env.command_generator.vel_command_b[:, 0] = play_cmd["vx"]
+                    env.command_generator.vel_command_b[:, 1] = play_cmd["vy"]
+                    env.command_generator.vel_command_b[:, 2] = play_cmd["wz"]
                     if hasattr(env.command_generator, "cmd_target_b"):
-                        env.command_generator.cmd_target_b[:, 0] = play_cmd_vx
-                        env.command_generator.cmd_target_b[:, 1] = play_cmd_vy
-                        env.command_generator.cmd_target_b[:, 2] = play_cmd_wz
+                        env.command_generator.cmd_target_b[:, 0] = play_cmd["vx"]
+                        env.command_generator.cmd_target_b[:, 1] = play_cmd["vy"]
+                        env.command_generator.cmd_target_b[:, 2] = play_cmd["wz"]
 
             est_vel = None
             if getattr(runner.alg.policy, "estimator", None) is not None:
@@ -333,6 +355,22 @@ def play():
                 feet_sensor_ids=getattr(getattr(env, "feet_cfg", None), "body_ids", None),
                 sim_time_s=float(env.episode_length_buf[0].item()) * float(env.step_dt),
             )
+
+            # 打印速度指令 vs 实际质心速度（yaw 系，EMA 平滑）
+            step_count += 1
+            vel_yaw = math_utils.quat_apply_inverse(
+                math_utils.yaw_quat(env.robot.data.root_quat_w[0:1]), env.robot.data.root_lin_vel_w[0:1]
+            )[0]
+            vel_ema = 0.9 * vel_ema + 0.1 * np.array(
+                [float(vel_yaw[0]), float(vel_yaw[1]), float(env.robot.data.root_ang_vel_w[0, 2])]
+            )
+            if step_count % log_every == 0:
+                print(
+                    f"[Play] t={step_count * float(env.step_dt):7.2f}s | "
+                    f"cmd(vx,vy,wz)=({play_cmd['vx']:5.2f},{play_cmd['vy']:5.2f},{play_cmd['wz']:5.2f}) | "
+                    f"actual(vx,vy,wz)=({vel_ema[0]:5.2f},{vel_ema[1]:5.2f},{vel_ema[2]:5.2f}) | "
+                    f"err_vx={play_cmd['vx'] - vel_ema[0]:5.2f}"
+                )
 
             if joint_logger is not None:
                 joint_logger.record()

@@ -30,8 +30,13 @@ from legged_lab.envs.base.base_env import BaseEnv
 
 
 class Keyboard(DeviceBase):
-    def __init__(self, env: BaseEnv):
-        """Initialize the keyboard layer."""
+    def __init__(self, env: BaseEnv, key_callbacks: dict[str, Callable] | None = None):
+        """Initialize the keyboard layer.
+
+        Args:
+            env: The environment instance.
+            key_callbacks: Optional {key_name: callable} extra bindings，KEY_PRESS 时触发。
+        """
         self.env = env
         # acquire omniverse interfaces
         self._appwindow = omni.appwindow.get_default_app_window()
@@ -45,7 +50,7 @@ class Keyboard(DeviceBase):
         # bindings for keyboard to command
         self._create_key_bindings()
         # dictionary for additional callbacks
-        self._additional_callbacks = dict()
+        self._additional_callbacks = dict(key_callbacks or {})
 
     def __del__(self):
         """Release the keyboard interface."""
@@ -65,7 +70,7 @@ class Keyboard(DeviceBase):
         pass
 
     def add_callback(self, key: str, func: Callable):
-        pass
+        self._additional_callbacks[key] = func
 
     def advance(self):
         pass
@@ -85,6 +90,9 @@ class Keyboard(DeviceBase):
             if event.input.name in self._INPUT_KEY_MAPPING:
                 if event.input.name == "R":
                     self.env.episode_length_buf = torch.ones_like(self.env.episode_length_buf) * 1e6
+            callback = self._additional_callbacks.get(event.input.name)
+            if callback is not None:
+                callback()
 
         # since no error, we are fine :)
         return True
