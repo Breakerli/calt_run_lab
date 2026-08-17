@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from collections import deque
 from datetime import datetime
 import os
 import sys
@@ -109,6 +110,7 @@ DEFAULT_ISAAC_JOINT_NAMES_FILE = os.path.join(LEGGED_LAB_ROOT_DIR, "Exported_pol
 MAX_CMD = np.array([20.0, 0.5, 0.5], dtype=np.float64)
 MAX_CMD_VX_NEG = 0.5
 CMD_DEADZONE = 0.05
+GAIT_WINDOW_S = 5.0  # 步频/步幅滑动平均窗口（秒）
 
 
 def parse_args() -> argparse.Namespace:
@@ -658,6 +660,22 @@ class MujocoRunner:
         self.style_onehot = np.zeros(self.num_styles, dtype=np.float32)
         self.style_onehot[self.style_ids] = 1.0
 
+        # Gait tracking（与训练 env 的 _run_step_count/_run_forward_dist 同口径，但取最近
+        # GAIT_WINDOW_S 秒的滑动平均）：cadence = 落地次数/run 时长，stride = 2*净前移/落地次数。
+        self._gait_toe_geom_ids = [
+            mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, name)
+            for name in ("toe1_left", "toe2_left", "toe1_right", "toe2_right")
+        ]
+        self._gait_toe_geom_ids = [gid for gid in self._gait_toe_geom_ids if gid >= 0]
+        if not self._gait_toe_geom_ids:
+            print("[WARN] MJCF 里没找到 toe1/2_left/right 脚趾 geom，步频/步幅将不可用。")
+        self._gait_window_len = max(1, int(round(GAIT_WINDOW_S / self.dt)))
+        self._gait_window = deque(maxlen=self._gait_window_len)
+        self._gait_step_count = 0
+        self._gait_forward_dist = 0.0
+        self._gait_run_steps = 0
+        self._gait_contact_prev = False
+
     def _print_joint_mapping(self) -> None:
         print("=" * 72)
         print("Joint-order sanity check  (MUJOCO -> ISAAC)")
@@ -678,6 +696,61 @@ class MujocoRunner:
     _VEL_HEADER_EVERY_N_LINES = 20
     _vel_print_line_count = 0
 
+    def _foot_contact_any(self) -> bool:
+        """任一脚趾 geom 是否与地面接触（左脚或右脚着地）。"""
+        toe_ids = self._gait_toe_geom_ids
+        if not toe_ids:
+            return False
+        for contact in self.data.contact[: self.data.ncon]:
+            if contact.geom1 in toe_ids or contact.geom2 in toe_ids:
+                return True
+        return False
+
+    def _update_gait_metrics(self) -> None:
+        """每个 policy step（100 Hz）更新一次：维护最近 GAIT_WINDOW_S 秒的滑动窗口。
+
+        与训练 env 的 Gait/cadence、Gait/stride_length 同口径，但改为最近 5s 平均：
+          cadence = 窗口内落地次数 / 窗口内 run 时长，stride = 2 * 窗口内净前移 / 窗口内落地次数。
+        只在 run style（style_id==2）累计，避免 stand/walk 污染。
+        """
+        contact_any = self._foot_contact_any()
+        is_run = self.style_ids == 2
+        footfall = False
+        forward_inc = 0.0
+        if is_run:
+            if contact_any and not self._gait_contact_prev:
+                footfall = True
+            lin_yaw, _ = mujoco_root_vel_yaw_frame(self.data.qpos, self.data.qvel)
+            forward_inc = max(float(lin_yaw[0]), 0.0) * self.dt
+
+        # 窗口满时弹出最旧一条，从滚动累计里减掉其贡献
+        if len(self._gait_window) == self._gait_window_len:
+            old_run, old_footfall, old_inc = self._gait_window[0]
+            if old_run:
+                self._gait_run_steps -= 1
+                if old_footfall:
+                    self._gait_step_count -= 1
+                self._gait_forward_dist -= old_inc
+        self._gait_window.append((is_run, footfall, forward_inc))
+        if is_run:
+            self._gait_run_steps += 1
+            if footfall:
+                self._gait_step_count += 1
+            self._gait_forward_dist += forward_inc
+
+        self._gait_contact_prev = contact_any
+
+    def _gait_summary(self) -> tuple[float, float]:
+        """最近 GAIT_WINDOW_S 秒平均 (cadence [steps/s], stride [m])；步数不足时返回 NaN。"""
+        run_time = self._gait_run_steps * self.dt
+        cadence = (self._gait_step_count / run_time) if run_time > 0.0 else float("nan")
+        stride = (
+            (2.0 * self._gait_forward_dist / self._gait_step_count)
+            if self._gait_step_count >= 1
+            else float("nan")
+        )
+        return cadence, stride
+
     def _maybe_print_velocity_status(self) -> None:
         if not getattr(self.cfg.debug, "print_velocity", False):
             return
@@ -693,18 +766,23 @@ class MujocoRunner:
         err_y = cmd[1] - lin_yaw[1]
         err_w = cmd[2] - ang_yaw[2]
 
+        cadence, stride = self._gait_summary()
+        cad_str = f"{cadence:5.2f}" if np.isfinite(cadence) else "   --"
+        stride_str = f"{stride:5.2f}" if np.isfinite(stride) else "   --"
+
         if self._vel_print_line_count % self._VEL_HEADER_EVERY_N_LINES == 0:
             print(
                 "[vel]    t  | style | "
                 "cmd[ vx    vy    ωz ] | yaw[ vx    vy    ωz ] | "
-                "err[ vx    vy    ωz ]"
+                "err[ vx    vy    ωz ] | cad[steps/s] | stride[m]"
             )
         print(
             f"[vel] {self.data.time:5.2f} | "
             f"{style_name:>5s} | "
             f"cmd[{cmd[0]:+5.2f} {cmd[1]:+5.2f} {cmd[2]:+5.2f}] | "
             f"yaw[{lin_yaw[0]:+5.2f} {lin_yaw[1]:+5.2f} {ang_yaw[2]:+5.2f}] | "
-            f"err[{err_x:+5.2f} {err_y:+5.2f} {err_w:+5.2f}]"
+            f"err[{err_x:+5.2f} {err_y:+5.2f} {err_w:+5.2f}] | "
+            f"cad {cad_str} | stride {stride_str}"
         )
         self._vel_print_line_count += 1
 
@@ -1009,6 +1087,8 @@ class MujocoRunner:
             "err_vx",
             "err_vy",
             "err_wz",
+            "cadence",
+            "stride_length",
             "him_vx",
             "him_vy",
             "him_vz",
@@ -1040,6 +1120,7 @@ class MujocoRunner:
         him = np.full(3, np.nan, dtype=np.float64) if est_vel is None else np.asarray(est_vel, dtype=np.float64)
         if him.shape != (3,):
             raise RuntimeError(f"HIM estimated velocity must have shape (3,), got {him.shape}")
+        cadence, stride = self._gait_summary()
         quat_wxyz = np.asarray(self.data.qpos[3:7], dtype=np.float64)
         quat_xyzw = quat_wxyz[[1, 2, 3, 0]]
         projected_gravity = self.quat_rotate_inverse(quat_xyzw, np.array([0.0, 0.0, -1.0]))
@@ -1054,6 +1135,8 @@ class MujocoRunner:
             *cmd.tolist(),
             *measured.tolist(),
             *error.tolist(),
+            cadence,
+            stride,
             *him.tolist(),
             *np.asarray(self.data.qpos[:3], dtype=np.float64).tolist(),
             *quat_wxyz.tolist(),
@@ -1135,6 +1218,7 @@ class MujocoRunner:
                         time.sleep(sleep_time)
 
                 self.episode_length_buf += 1
+                self._update_gait_metrics()
                 est_vel = (
                     get_him_est_lin_vel_from_jit(self.policy, self.obs_history)
                     if self._him_est_vel
@@ -1201,6 +1285,11 @@ class MujocoRunner:
             dtype=np.float32,
         )
         self._obs_history_initialized = False
+        self._gait_window.clear()
+        self._gait_step_count = 0
+        self._gait_forward_dist = 0.0
+        self._gait_run_steps = 0
+        self._gait_contact_prev = False
         print("[INFO] Simulation reset")
 
     def _get_glfw_window(self):
