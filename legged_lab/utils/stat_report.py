@@ -116,7 +116,11 @@ def compute_joint_stats(
 ) -> dict[int, dict]:
     """逐关节统计峰值/RMS/功率/包络利用率；返回 {joint_idx: dict}。"""
     stats = {}
-    y_env = np.nanmax(np.stack([params["y1"], params["y2"], params["effort_limit"]]), axis=0)
+    # 包络 Y = min(关节硬限， max(同向峰值 Y1，反向峰值 Y2))；T-N 曲线才是真正的动态能力边界
+    y_env = np.minimum(
+        params["effort_limit"],
+        np.nanmax(np.stack([params["y1"], params["y2"]]), axis=0),
+    )
     cap = envelope_cap(np.abs(qd), y_env[None, :], params["x1"][None, :], params["x2"][None, :])
     power = tau * qd
     for gi in range(len(groups)):
@@ -137,47 +141,56 @@ def compute_joint_stats(
 # --- Plotting ---
 
 def plot_time_series(t, series_list, labels, ylabel, title, path):
-    """单组关节时序图：左右同轴同纵轴范围。"""
-    fig, ax = plt.subplots(figsize=(9, 4.5), dpi=150)
-    colors = ["tab:blue", "tab:orange", "tab:green"]
-    for k, (s, lb) in enumerate(zip(series_list, labels)):
-        ax.plot(t, s, linewidth=0.9, label=lb, color=colors[k % len(colors)])
-    ax.set_xlabel("Time [s]")
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
-    ax.grid(True, alpha=0.3)
-    ax.legend(loc="upper right", fontsize=8)
+    """单组关节时序图：每个关节一个 subplot（横向排列），同纵轴范围便于左右比较。"""
+    n = len(series_list)
+    fig, axes = plt.subplots(1, n, figsize=(6.5 * n, 4.2), dpi=150, sharey=True, squeeze=False)
     data = np.concatenate([np.atleast_1d(s) for s in series_list])
     lo, hi = float(np.min(data)), float(np.max(data))
     margin = max((hi - lo) * 0.1, 1e-3)
-    ax.set_ylim(lo - margin, hi + margin)
+    for k, (s, lb) in enumerate(zip(series_list, labels)):
+        ax = axes[0, k]
+        ax.plot(t, s, linewidth=0.9, color="tab:blue")
+        ax.set_xlabel("Time [s]")
+        ax.set_ylabel(ylabel)
+        ax.set_title(lb, fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.set_ylim(lo - margin, hi + margin)
+        ax.set_xlim(float(t[0]), float(t[-1]))
+    fig.suptitle(title, fontsize=11)
     fig.tight_layout()
     fig.savefig(path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 
 def plot_envelope(qd, tau, params, entries, labels, title, path):
-    """转速-转矩散点 + 四象限对称扩展包络（取组内最外边界）。"""
-    fig, ax = plt.subplots(figsize=(7, 6), dpi=150)
-    colors = ["tab:blue", "tab:cyan", "tab:purple"]
-    for k, e in enumerate(entries):
-        i = e["idx"]
-        ax.scatter(qd[:, i], tau[:, i], s=4, alpha=0.5, color=colors[k % len(colors)], label=labels[k])
-    y_env = max(float(np.nanmax(params["y1"][e["idx"]])) for e in entries)
-    y_env = max(y_env, float(np.nanmax([max(params["y2"][e["idx"]], params["effort_limit"][e["idx"]]) for e in entries])))
+    """转速-转矩散点 + 四象限对称扩展包络：每个关节一个 subplot，同坐标范围。"""
+    n = len(entries)
+    fig, axes = plt.subplots(1, n, figsize=(6.0 * n, 5.5), dpi=150, sharex=True, sharey=True, squeeze=False)
+    # 包络取组内最外边界（同组关节参数一致，逐关节取并集兜底）
+    y_env = max(
+        float(min(params["effort_limit"][e["idx"]], max(params["y1"][e["idx"]], params["y2"][e["idx"]])))
+        for e in entries
+    )
     x1 = max(float(params["x1"][e["idx"]]) for e in entries)
     x2 = max(float(params["x2"][e["idx"]]) for e in entries)
     bx = np.array([-x2, -x1, 0.0, x1, x2])
     by = envelope_cap(np.abs(bx), np.full_like(bx, y_env), np.full_like(bx, x1), np.full_like(bx, x2))
-    ax.plot(bx, by, color="tab:orange", linestyle="--", linewidth=1.2, label="envelope")
-    ax.plot(bx, -by, color="tab:orange", linestyle="--", linewidth=1.2)
-    ax.axhline(0, color="k", linewidth=0.5)
-    ax.axvline(0, color="k", linewidth=0.5)
-    ax.set_xlabel("Speed [rad/s]")
-    ax.set_ylabel("Torque [N·m]")
-    ax.set_title(title)
-    ax.grid(True, alpha=0.3)
-    ax.legend(loc="upper right", fontsize=8)
+    for k, e in enumerate(entries):
+        i = e["idx"]
+        ax = axes[0, k]
+        ax.scatter(qd[:, i], tau[:, i], s=4, alpha=0.5, color="tab:blue")
+        ax.plot(bx, by, color="tab:orange", linestyle="--", linewidth=1.2, label="envelope")
+        ax.plot(bx, -by, color="tab:orange", linestyle="--", linewidth=1.2)
+        ax.axhline(0, color="k", linewidth=0.5)
+        ax.axvline(0, color="k", linewidth=0.5)
+        ax.set_xlabel("Speed [rad/s]")
+        ax.set_ylabel("Torque [N·m]")
+        ax.set_title(labels[k], fontsize=10)
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc="upper right", fontsize=8)
+        ax.set_xlim(-x2 * 1.1, x2 * 1.1)
+        ax.set_ylim(-y_env * 1.1, y_env * 1.1)
+    fig.suptitle(title, fontsize=11)
     fig.tight_layout()
     fig.savefig(path, dpi=300, bbox_inches="tight")
     plt.close(fig)
@@ -197,7 +210,7 @@ def write_report(path, info, by_group, groups, stats, params, use_cn, fig_files)
     lines.append(f"- 策略: `{info['policy']}`")
     lines.append(f"- 前向速度指令: {info['cmd_vx']:.2f} m/s；实际质心前向速度均值: {info['actual_vx']:.2f} m/s")
     lines.append(
-        f"- 统计窗口: {info['n_samples']} 个策略步采样点（{info['policy_hz']:.0f} Hz，"
+        f"- 统计窗口: {info['n_samples']} 个采样点（{info['policy_hz']:.0f} Hz，"
         f"约 {info['duration']:.2f} s）；{info['warmup_desc']}\n"
     )
 
@@ -280,9 +293,10 @@ def write_report(path, info, by_group, groups, stats, params, use_cn, fig_files)
 
 
 def save_raw_csv(path, t, q, qd, tau, joint_names, base_vx):
-    """保存原始时间序列（便于二次绘图/核对）。"""
+    """保存原始时间序列（便于二次绘图/核对）；列与 header 同为逐关节 q/qd/tau 交错排列。"""
     header = ["time", "base_vx"] + [f"{k}_{n}" for n in joint_names for k in ("q", "qd", "tau")]
-    data = np.column_stack([t, base_vx, q, qd, tau])
+    cols = [t, base_vx] + [arr[:, i] for i in range(len(joint_names)) for arr in (q, qd, tau)]
+    data = np.column_stack(cols)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(",".join(header) + "\n")

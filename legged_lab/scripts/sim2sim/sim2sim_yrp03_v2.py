@@ -30,6 +30,8 @@ Usage:
   python legged_lab/scripts/sim2sim/sim2sim_yrp03_v2_new.py --log-torques joint_torques.csv
   python legged_lab/scripts/sim2sim/sim2sim_yrp03_v2_new.py --record-data
   python legged_lab/scripts/sim2sim/sim2sim_yrp03_v2_new.py --record-data logs/my_speed_test.csv
+  # 关节统计报告（固定 vx=10 m/s，热身 4s 后按 1000 Hz 物理子步记录 2s，退出时出图/表/docx）:
+  python legged_lab/scripts/sim2sim/sim2sim_yrp03_v2_new.py --stat-report --stat-vx 10 --stat-warmup-time 4 --stat-record-time 2
 
   # 3) LCM 曲线（另开终端，默认 --source mujoco）:
   python legged_lab/scripts/utils/lcm_subscriber.py
@@ -97,7 +99,7 @@ from legged_lab.scripts.lcm_publisher import (
 
 DEFAULT_VEL_CMD_SEQUENCE = (
     #(100.0, (15.0, 0.0, 0.0)),
-    (500.0, (10.0, 0.0, 0.0)),
+    (500.0, (13.0, 0.0, 0.0)),
     #(100.0, (0.0, 0.0, 0.0)),
 )
 DEFAULT_VEL_CMD_SEQUENCE_HELP = " -> ".join(
@@ -106,6 +108,9 @@ DEFAULT_VEL_CMD_SEQUENCE_HELP = " -> ".join(
 )
 DEFAULT_PLOT_DIR = os.path.join(LEGGED_LAB_ROOT_DIR, "logs", "sim2sim_yrp03_v2_plots")
 DEFAULT_RECORD_DIR = os.path.join(LEGGED_LAB_ROOT_DIR, "logs", "sim2sim_yrp03_v2_records")
+DEFAULT_STAT_REPORT_DIR = os.path.join(LEGGED_LAB_ROOT_DIR, "logs", "sim2sim_yrp03_v2_stat_report")
+# 统计记录窗口内的防呆：基座低于该高度判定为摔倒，终止统计
+STAT_FALL_BASE_HEIGHT = 0.5
 DEFAULT_ISAAC_JOINT_NAMES_FILE = os.path.join(LEGGED_LAB_ROOT_DIR, "Exported_policy", "isaac_joint_names.txt")
 MAX_CMD = np.array([20.0, 0.5, 0.5], dtype=np.float64)
 MAX_CMD_VX_NEG = 0.5
@@ -143,6 +148,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--plot_dir", type=str, default=DEFAULT_PLOT_DIR, help="Directory to save plot PNGs when --plot_joints is enabled.")
     parser.add_argument("--no_show_plots", action="store_true", help="Save plot PNGs without opening matplotlib windows.")
     parser.add_argument("--use_vel_cmd", "--use-vel-cmd", action="store_true", help=f"Use predefined velocity commands instead of joystick/keyboard input: {DEFAULT_VEL_CMD_SEQUENCE_HELP}.")
+    parser.add_argument(
+        "--stat-report", "--stat_report",
+        action="store_true",
+        help=(
+            "关节统计报告模式：固定 --stat-vx 速度指令，先热身 --stat-warmup-time 秒，"
+            "再按 1000 Hz 物理子步记录 --stat-record-time 秒的 q/qd/tau，"
+            "退出时生成对齐 template.docx 的统计表/图/report.md/report.docx。"
+        ),
+    )
+    parser.add_argument("--stat-vx", type=float, default=10.0, help="统计工况的前向速度指令 [m/s]。")
+    parser.add_argument("--stat-warmup-time", type=float, default=4.0, help="统计热身时长 [s]（仿真时间）。")
+    parser.add_argument("--stat-record-time", type=float, default=2.0, help="统计记录时长 [s]（建议 >=2 个步态周期）。")
+    parser.add_argument("--stat-output-dir", type=str, default=None, help=f"统计报告输出目录；默认 {DEFAULT_STAT_REPORT_DIR}/<时间戳>。")
     parser.add_argument(
         "--explicit-actuator",
         action=argparse.BooleanOptionalAction,
@@ -308,6 +326,20 @@ def get_tn_plot_joint_names(mujoco_joint_names: list[str]) -> list[str]:
 def get_tn_curve_params(joint_name: str) -> tuple[float, float, float, float]:
     params = ACTUATOR_PARAMS[joint_name]
     return params["X1"], params["X2"], params["Y1"], params["Y2"]
+
+
+def build_stat_report_params(joint_names: list[str]) -> dict[str, np.ndarray]:
+    """按给定关节顺序组装 legged_lab.utils.stat_report 需要的每关节参数。"""
+    keys = ("kp", "kd", "effort_limit", "velocity_limit", "y1", "y2", "x1", "x2")
+    params = {k: np.zeros(len(joint_names)) for k in keys}
+    for i, name in enumerate(joint_names):
+        p = ACTUATOR_PARAMS[name]
+        params["kp"][i], params["kd"][i] = p["kp"], p["kd"]
+        params["effort_limit"][i] = p["Y2"]
+        params["velocity_limit"][i] = p["velocity_limit"]
+        params["y1"][i], params["y2"][i] = p["Y1"], p["Y2"]
+        params["x1"][i], params["x2"][i] = p["X1"], p["X2"]
+    return params
 
 
 def predefined_velocity_command(elapsed_time_s: float) -> np.ndarray:
@@ -528,6 +560,11 @@ class MujocoRunner:
         show_plots: bool = True,
         explicit_actuator: bool = True,
         use_vel_cmd: bool = False,
+        stat_report: bool = False,
+        stat_vx: float = 10.0,
+        stat_warmup_time: float = 4.0,
+        stat_record_time: float = 2.0,
+        stat_output_dir: str | None = None,
     ):
         self.cfg = cfg
         if not explicit_actuator:
@@ -537,6 +574,16 @@ class MujocoRunner:
         self.show_plots = show_plots
         self.explicit_actuator = explicit_actuator
         self.use_vel_cmd = use_vel_cmd
+        # --- 关节统计报告模式（1000 Hz 物理子步采样，对齐 sim2sim_ryp01_v2 --log-torques 的记录位置） ---
+        self.stat_report = stat_report
+        self.stat_vx = float(stat_vx)
+        self.stat_warmup_time = float(stat_warmup_time)
+        self.stat_record_time = float(stat_record_time)
+        self.stat_output_dir = stat_output_dir
+        self.policy_path = policy_path
+        self._stat_t0: float | None = None
+        self._stat_done = False
+        self._stat_log: dict[str, list] = {"t": [], "q": [], "qd": [], "tau": [], "vx": []}
         self._plot_time: list[float] = []
         self._plot_base_yaw_vel: list[np.ndarray] = []
         self._plot_joint_pos: list[np.ndarray] = []
@@ -1069,6 +1116,78 @@ class MujocoRunner:
             f"[INFO] Wrote {len(self._torque_log)} joint-state samples to {self.torque_log_path}"
         )
 
+    def _record_stat_sample(self) -> None:
+        """统计模式逐物理子步记录 q/qd/tau（1000 Hz；与 --log-torques 同一采样位置）。
+
+        sensordata(q/qd) 与 actuator_force(tau) 同属本子步积分前阶段，时刻自洽。
+        """
+        t = float(self.data.time)
+        if t < self.stat_warmup_time:
+            return
+        if self._stat_t0 is None:
+            self._stat_t0 = t
+            print(f"[INFO] 统计记录开始 @ t={t:.2f}s")
+        elif t - self._stat_t0 >= self.stat_record_time:
+            self._stat_done = True
+            print(f"[INFO] 统计记录结束，共 {len(self._stat_log['t'])} 个样本")
+            return
+        if float(self.data.qpos[2]) < STAT_FALL_BASE_HEIGHT:
+            raise RuntimeError(
+                f"机器人摔倒（base_z={self.data.qpos[2]:.2f} m @ t={t:.2f} s），终止统计。"
+            )
+        n = self.cfg.sim.num_action
+        lin_yaw, _ = mujoco_root_vel_yaw_frame(self.data.qpos, self.data.qvel)
+        self._stat_log["t"].append(t - self._stat_t0)
+        self._stat_log["q"].append(np.asarray(self.data.sensordata[0:n], dtype=np.float64).copy())
+        self._stat_log["qd"].append(np.asarray(self.data.sensordata[n : 2 * n], dtype=np.float64).copy())
+        self._stat_log["tau"].append(np.asarray(self.data.actuator_force, dtype=np.float64).copy())
+        self._stat_log["vx"].append(float(lin_yaw[0]))
+
+    def _write_stat_report(self) -> None:
+        """统计窗口数据 -> legged_lab.utils.stat_report.generate_report（图/表/md/docx）。"""
+        if not self.stat_report:
+            return
+        n_rec = len(self._stat_log["t"])
+        if n_rec < 10:
+            print(f"[WARN] 统计样本过少（{n_rec}），跳过报告生成。")
+            return
+        from legged_lab.utils.stat_report import generate_report
+
+        n = self.cfg.sim.num_action
+        t = np.asarray(self._stat_log["t"])
+        q, qd, tau = (np.asarray(self._stat_log[k]) for k in ("q", "qd", "tau"))
+        base_vx = np.asarray(self._stat_log["vx"])
+        stance = [
+            f"{self.mujoco_joint_names[i]} {np.rad2deg(self.default_dof_pos[i]):.1f}°"
+            for i in range(n)
+            if abs(self.default_dof_pos[i]) > 1e-3
+        ]
+        policy_dt = self.cfg.sim.dt * self.cfg.sim.decimation
+        model_rows = [
+            ("关节自由度", str(n), "受控关节数"),
+            ("模型总质量", f"{float(np.sum(self.model.body_mass)):.2f} kg", "MJCF body_mass 求和"),
+            ("初始基座高度", f"{self.cfg.robot.base_height_init:.2f} m", "MJCF pelvis 初始高度"),
+            ("默认站姿", "；".join(stance), "非零默认角关节"),
+            ("动作维度", str(n), "策略输出维度"),
+            ("单步观测维度", str(self.cfg.sim.num_obs_per_step), f"历史 {self.cfg.sim.actor_obs_history_length} 步"),
+            ("策略频率", f"{1.0 / policy_dt:.0f} Hz", f"物理 {1.0 / self.cfg.sim.dt:.0f} Hz × decimation {self.cfg.sim.decimation}"),
+        ]
+        out_dir = self.stat_output_dir or os.path.join(
+            DEFAULT_STAT_REPORT_DIR, datetime.now().strftime("%Y%m%d_%H%M%S")
+        )
+        info = {
+            "source": "MuJoCo Sim2Sim（yrp03-v2，显式 PD + T-N 限幅）",
+            "policy": self.policy_path,
+            "cmd_vx": self.stat_vx,
+            "policy_hz": 1.0 / self.cfg.sim.dt,  # 采样率 = 物理子步频率（1000 Hz），非策略频率
+            "warmup_desc": f"热身 {self.stat_warmup_time:.2f} s",
+            "model_rows": model_rows,
+        }
+        generate_report(
+            out_dir, t, q, qd, tau, base_vx,
+            list(self.mujoco_joint_names), build_stat_report_params(list(self.mujoco_joint_names)), info,
+        )
+
     @staticmethod
     def _analysis_csv_header(joint_names: list[str]) -> list[str]:
         header = [
@@ -1162,14 +1281,21 @@ class MujocoRunner:
     def run(self) -> None:
         self.setup_keyboard_listener()
         self.listener.start()
-        if self.use_vel_cmd:
+        if self.stat_report:
+            print(
+                f"[INFO] 统计报告模式: vx={self.stat_vx:.2f} m/s, 热身 {self.stat_warmup_time:.2f}s, "
+                f"记录 {self.stat_record_time:.2f}s @ {1.0 / self.cfg.sim.dt:.0f} Hz（物理子步），记录结束后自动退出。"
+            )
+        elif self.use_vel_cmd:
             print(f"[INFO] Using predefined velocity commands: {format_vel_cmd_sequence()}")
         else:
             self.setup_gamepad()
 
         try:
             while self.data.time < self.cfg.sim.sim_duration:
-                if self.use_vel_cmd:
+                if self.stat_report:
+                    self.command_target_vel[:] = np.array([self.stat_vx, 0.0, 0.0])
+                elif self.use_vel_cmd:
                     self.command_target_vel[:] = predefined_velocity_command(float(self.data.time))
                 else:
                     self.update_command_from_gamepad()
@@ -1194,6 +1320,12 @@ class MujocoRunner:
                         self._record_joint_state()
                     if self.plot_joints:
                         self._record_plot_sample()
+
+                    if _sim_update == 0:
+                        if self.stat_report and not self._stat_done:
+                            self._record_stat_sample()
+                        if self.stat_report and self._stat_done:
+                            return
 
                     self._update_viewer_camera_follow()
                     self.viewer.render()
@@ -1310,6 +1442,7 @@ class MujocoRunner:
     def cleanup(self) -> None:
         self._write_torque_log()
         self._write_analysis_log()
+        self._write_stat_report()
         self.exit_flag = True
         if self.listener is not None:
             self.listener.stop()
@@ -1632,5 +1765,10 @@ if __name__ == "__main__":
         show_plots=not args.no_show_plots,
         explicit_actuator=args.explicit_actuator,
         use_vel_cmd=args.use_vel_cmd,
+        stat_report=args.stat_report,
+        stat_vx=args.stat_vx,
+        stat_warmup_time=args.stat_warmup_time,
+        stat_record_time=args.stat_record_time,
+        stat_output_dir=args.stat_output_dir,
     )
     runner.run()
