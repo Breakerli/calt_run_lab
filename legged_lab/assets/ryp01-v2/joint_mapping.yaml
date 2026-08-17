@@ -1,0 +1,45 @@
+schema_version: 1
+robot_name: 01RYP-v2
+task_name: walk-01ryp
+source_of_truth: urdf/01RYP-v2.urdf
+controlled_joint_count: 13
+controlled_joint_policy: all
+order_convention: left_leg_RYP_then_right_leg_RYP_then_shoulders_then_waist
+
+# Isaac and MuJoCo use the same joint names, but may expose topology-dependent
+# internal indices. Consumers must resolve names and reorder into this list.
+# Hardware IDs, signs and encoder zero offsets remain null until measured from
+# the real controller/calibration data.
+joints:
+  - {index: 0, name: hip_roll_l_joint, position_signal: hip_roll_l_pos, velocity_signal: hip_roll_l_vel, isaac_joint: hip_roll_l_joint, mujoco_joint: hip_roll_l_joint, hardware_id: null, direction: null, zero_offset_rad: null, gear_ratio: 1.0, effort_limit: 657.0, velocity_limit: 25.6, kp: 700.0, kd: 10.0}
+  - {index: 1, name: hip_yaw_l_joint, position_signal: hip_yaw_l_pos, velocity_signal: hip_yaw_l_vel, isaac_joint: hip_yaw_l_joint, mujoco_joint: hip_yaw_l_joint, hardware_id: null, direction: null, zero_offset_rad: null, gear_ratio: 1.0, effort_limit: 190.0, velocity_limit: 13.0, kp: 500.0, kd: 5.0}
+  - {index: 2, name: hip_pitch_l_joint, position_signal: hip_pitch_l_pos, velocity_signal: hip_pitch_l_vel, isaac_joint: hip_pitch_l_joint, mujoco_joint: hip_pitch_l_joint, hardware_id: null, direction: null, zero_offset_rad: null, gear_ratio: 1.0, effort_limit: 657.0, velocity_limit: 25.6, kp: 700.0, kd: 10.0}
+  - {index: 3, name: knee_pitch_l_joint, position_signal: knee_pitch_l_pos, velocity_signal: knee_pitch_l_vel, isaac_joint: knee_pitch_l_joint, mujoco_joint: knee_pitch_l_joint, hardware_id: null, direction: null, zero_offset_rad: null, gear_ratio: 1.0, effort_limit: 657.0, velocity_limit: 25.6, kp: 700.0, kd: 10.0}
+  - {index: 4, name: ankle_pitch_l_joint, position_signal: ankle_pitch_l_pos, velocity_signal: ankle_pitch_l_vel, isaac_joint: ankle_pitch_l_joint, mujoco_joint: ankle_pitch_l_joint, hardware_id: null, direction: null, zero_offset_rad: null, gear_ratio: 1.0, effort_limit: 180.0, velocity_limit: 26.0, kp: 30.0, kd: 2.5}
+  - {index: 5, name: hip_roll_r_joint, position_signal: hip_roll_r_pos, velocity_signal: hip_roll_r_vel, isaac_joint: hip_roll_r_joint, mujoco_joint: hip_roll_r_joint, hardware_id: null, direction: null, zero_offset_rad: null, gear_ratio: 1.0, effort_limit: 657.0, velocity_limit: 25.6, kp: 700.0, kd: 10.0}
+  - {index: 6, name: hip_yaw_r_joint, position_signal: hip_yaw_r_pos, velocity_signal: hip_yaw_r_vel, isaac_joint: hip_yaw_r_joint, mujoco_joint: hip_yaw_r_joint, hardware_id: null, direction: null, zero_offset_rad: null, gear_ratio: 1.0, effort_limit: 190.0, velocity_limit: 13.0, kp: 500.0, kd: 5.0}
+  - {index: 7, name: hip_pitch_r_joint, position_signal: hip_pitch_r_pos, velocity_signal: hip_pitch_r_vel, isaac_joint: hip_pitch_r_joint, mujoco_joint: hip_pitch_r_joint, hardware_id: null, direction: null, zero_offset_rad: null, gear_ratio: 1.0, effort_limit: 657.0, velocity_limit: 25.6, kp: 700.0, kd: 10.0}
+  - {index: 8, name: knee_pitch_r_joint, position_signal: knee_pitch_r_pos, velocity_signal: knee_pitch_r_vel, isaac_joint: knee_pitch_r_joint, mujoco_joint: knee_pitch_r_joint, hardware_id: null, direction: null, zero_offset_rad: null, gear_ratio: 1.0, effort_limit: 657.0, velocity_limit: 25.6, kp: 700.0, kd: 10.0}
+  - {index: 9, name: ankle_pitch_r_joint, position_signal: ankle_pitch_r_pos, velocity_signal: ankle_pitch_r_vel, isaac_joint: ankle_pitch_r_joint, mujoco_joint: ankle_pitch_r_joint, hardware_id: null, direction: null, zero_offset_rad: null, gear_ratio: 1.0, effort_limit: 180.0, velocity_limit: 26.0, kp: 30.0, kd: 2.5}
+  - {index: 10, name: shoulder_pitch_l_joint, position_signal: shoulder_pitch_l_pos, velocity_signal: shoulder_pitch_l_vel, isaac_joint: shoulder_pitch_l_joint, mujoco_joint: shoulder_pitch_l_joint, hardware_id: null, direction: null, zero_offset_rad: null, gear_ratio: 1.0, effort_limit: 52.5, velocity_limit: 14.1, kp: 60.0, kd: 3.0}
+  - {index: 11, name: shoulder_pitch_r_joint, position_signal: shoulder_pitch_r_pos, velocity_signal: shoulder_pitch_r_vel, isaac_joint: shoulder_pitch_r_joint, mujoco_joint: shoulder_pitch_r_joint, hardware_id: null, direction: null, zero_offset_rad: null, gear_ratio: 1.0, effort_limit: 52.5, velocity_limit: 14.1, kp: 60.0, kd: 3.0}
+  # Waist parameters confirmed for the 01RYP model.
+  - {index: 12, name: waist_yaw_joint, position_signal: waist_yaw_pos, velocity_signal: waist_yaw_vel, isaac_joint: waist_yaw_joint, mujoco_joint: waist_yaw_joint, hardware_id: null, direction: null, zero_offset_rad: null, gear_ratio: 1.0, effort_limit: 250.0, velocity_limit: 20.9, kp: 400.0, kd: 8.0}
+
+standing_pose:
+  # Derived from URDF nominal-pose FK plus the ankle collision-mesh sole offset.
+  base_height: 1.09
+  joint_positions_rad:
+    hip_roll_l_joint: 0.0
+    hip_yaw_l_joint: 0.0
+    hip_pitch_l_joint: -0.2617993877991494
+    knee_pitch_l_joint: 0.5235987755982988
+    ankle_pitch_l_joint: -0.2617993877991494
+    hip_roll_r_joint: 0.0
+    hip_yaw_r_joint: 0.0
+    hip_pitch_r_joint: -0.2617993877991494
+    knee_pitch_r_joint: 0.5235987755982988
+    ankle_pitch_r_joint: -0.2617993877991494
+    shoulder_pitch_l_joint: 0.0
+    shoulder_pitch_r_joint: 0.0
+    waist_yaw_joint: 0.0
