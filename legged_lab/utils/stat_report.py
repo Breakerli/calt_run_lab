@@ -162,6 +162,20 @@ def plot_time_series(t, series_list, labels, ylabel, title, path):
     plt.close(fig)
 
 
+def plot_total_power(t, power, title, path):
+    """所有关节功率绝对值之和随时间变化曲线。"""
+    fig, ax = plt.subplots(1, 1, figsize=(9, 3.6), dpi=150)
+    ax.plot(t, power, linewidth=1.0, color="tab:orange")
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("Power [W]")
+    ax.set_title(title, fontsize=11)
+    ax.grid(True, alpha=0.3)
+    ax.set_xlim(float(t[0]), float(t[-1]))
+    fig.tight_layout()
+    fig.savefig(path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_envelope(qd, tau, params, entries, labels, title, path):
     """转速-转矩散点 + 四象限对称扩展包络：每个关节一个 subplot，同坐标范围。"""
     n = len(entries)
@@ -260,6 +274,13 @@ def write_report(path, info, by_group, groups, stats, params, use_cn, fig_files)
     _stat_table("5. 功率统计（P=τ×q̇）", ["最大正功率 (W)", "最大负功率 (W)", "绝对峰值功率 (W)", "RMS 功率 (W)"])
     _stat_table("6. 转速-转矩包络", ["最大包络利用率", "包络外样本数"])
 
+    # --- 所有关节总功率 ---
+    if info.get("total_abs_power_peak") is not None:
+        lines.append("## 7. 所有关节功率绝对值之和\n")
+        lines.append(f"- 峰值总功率: {info['total_abs_power_peak']:.1f} W")
+        lines.append(f"- RMS 总功率: {info['total_abs_power_rms']:.1f} W")
+        lines.append(f"- 均值总功率: {info['total_abs_power_mean']:.1f} W\n")
+
     # --- 主要结果结论 ---
     all_idx = [e["idx"] for gi in range(len(groups)) for e in by_group[gi]]
 
@@ -268,7 +289,7 @@ def write_report(path, info, by_group, groups, stats, params, use_cn, fig_files)
         e = next(e for gi in range(len(groups)) for e in by_group[gi] if e["idx"] == i)
         return label_of(e, use_cn), stats[i][key]
 
-    lines.append("## 7. 主要结果\n")
+    lines.append("## 8. 主要结果\n")
     n_out_total = sum(stats[i]["n_out"] for i in all_idx)
     lb, v = _best("peak_qd")
     lines.append(f"- 绝对峰值转速最高: {lb} = {v:.3f} rad/s")
@@ -283,7 +304,7 @@ def write_report(path, info, by_group, groups, stats, params, use_cn, fig_files)
         "（包络按执行器 T-N 曲线四象限对称扩展；最终选型仍需结合额定连续转矩、热容量、减速比、效率和母线电压）\n"
     )
 
-    lines.append("## 8. 图片索引\n")
+    lines.append("## 9. 图片索引\n")
     for f in fig_files:
         lines.append(f"- {f}")
     lines.append("")
@@ -319,6 +340,7 @@ def generate_report(out_dir, t, q, qd, tau, base_vx, joint_names, params, info) 
     fig_files = []
     fig_records = []  # {"kind", "group", "path"}，供 docx 使用
     fig_no = 0
+    total_abs_power = np.sum(np.abs(tau * qd), axis=1)
     kinds = [
         ("speed", "Speed [rad/s]", qd, "转速-时间"),
         ("torque", "Torque [N·m]", tau, "转矩-时间"),
@@ -353,6 +375,18 @@ def generate_report(out_dir, t, q, qd, tau, base_vx, joint_names, params, info) 
         )
         fig_files.append(f"figs/{fname} — {gtitle}{'转速-转矩' if use_cn else ' envelope'}")
         fig_records.append({"kind": "envelope", "group": gname, "path": fpath})
+
+    # --- 所有关节总功率绝对值之和-时间曲线 ---
+    fig_no += 1
+    fname = f"fig{fig_no:02d}_total_abs_power.png"
+    fpath = os.path.join(fig_dir, fname)
+    plot_total_power(
+        t, total_abs_power,
+        "所有关节功率绝对值之和" if use_cn else "Total absolute joint power",
+        fpath,
+    )
+    fig_files.append(f"figs/{fname} — {'所有关节功率绝对值之和-时间' if use_cn else 'total absolute joint power-time'}")
+    fig_records.append({"kind": "total_power", "group": "all", "path": fpath})
     print(f"[INFO] Saved {len(fig_files)} figures -> {fig_dir}")
 
     save_raw_csv(os.path.join(out_dir, "joint_log.csv"), t, q, qd, tau, joint_names, base_vx)
@@ -368,6 +402,9 @@ def generate_report(out_dir, t, q, qd, tau, base_vx, joint_names, params, info) 
     info["actual_vx"] = float(np.mean(base_vx))
     info["n_samples"] = len(t)
     info["duration"] = float(t[-1]) if len(t) > 1 else 0.0
+    info["total_abs_power_peak"] = float(np.max(total_abs_power))
+    info["total_abs_power_rms"] = float(np.sqrt(np.mean(total_abs_power ** 2)))
+    info["total_abs_power_mean"] = float(np.mean(total_abs_power))
     report_path = os.path.join(out_dir, "report.md")
     write_report(report_path, info, by_group, groups, stats, params, use_cn, fig_files)
     with open(os.path.join(out_dir, "report_info.json"), "w", encoding="utf-8") as f:
@@ -422,11 +459,17 @@ DOCX_SECTIONS = [
         "desc": "轨迹为仿真关节工作点，虚线和浅色区域为执行器T-N曲线按四象限对称扩展后的能力包络。",
         "cols": [("最大包络利用率", "util"), ("包络外样本数", "n_out")],
     },
+    {
+        "kind": "total_power",
+        "title": "所有关节功率绝对值之和-时间曲线",
+        "desc": "机械功率按P=τ×q̇逐关节计算后取绝对值，再对所有关节求和，反映整机瞬时机械功率需求。",
+        "cols": [],
+    },
 ]
-_CN_NUM = "一二三四"
+_CN_NUM = "一二三四五"
 
 
-def _joint_stat_conclusion(section: dict, by_group, groups, stats, n_samples: int) -> str:
+def _joint_stat_conclusion(section: dict, by_group, groups, stats, n_samples: int, info: dict) -> str:
     """生成该小节的“主要结果”结论段落（口径对齐 template.docx）。"""
     all_entries = [(e, stats[e["idx"]]) for gi in range(len(groups)) for e in by_group[gi]]
 
@@ -435,6 +478,15 @@ def _joint_stat_conclusion(section: dict, by_group, groups, stats, n_samples: in
         return label_of(e, True), s[key]
 
     kind = section["kind"]
+    if kind == "total_power":
+        peak = info.get("total_abs_power_peak")
+        if peak is None:
+            return "未记录总功率数据。"
+        return (
+            f"所有关节功率绝对值之和的峰值为{peak:.1f}W，"
+            f"均值为{info['total_abs_power_mean']:.1f}W，"
+            f"RMS为{info['total_abs_power_rms']:.1f}W。"
+        )
     if kind == "speed":
         lb, v = _best("peak_qd")
         lb2, v2 = _best("rms_qd")
@@ -519,21 +571,22 @@ def write_docx(path, info, by_group, groups, stats, params, fig_records):
     for si, section in enumerate(DOCX_SECTIONS):
         doc.add_heading(f"（{_CN_NUM[si]}）{section['title']}", level=3)
         doc.add_paragraph(section["desc"])
-        table = doc.add_table(rows=1, cols=1 + len(section["cols"]))
-        table.style = "Table Grid"
-        table.rows[0].cells[0].text = "关节"
-        for j, (h, _) in enumerate(section["cols"]):
-            table.rows[0].cells[j + 1].text = h
-        for gi in range(len(groups)):
-            for e in by_group[gi]:
-                s = stats[e["idx"]]
-                cells = table.add_row().cells
-                cells[0].text = label_of(e, True)
-                for j, (_, key) in enumerate(section["cols"]):
-                    cells[j + 1].text = (
-                        f"{s[key] * 100:.1f}%" if key == "util" else (str(s[key]) if key == "n_out" else fmt(s[key]))
-                    )
-        doc.add_paragraph(_joint_stat_conclusion(section, by_group, groups, stats, info["n_samples"]))
+        if section["cols"]:
+            table = doc.add_table(rows=1, cols=1 + len(section["cols"]))
+            table.style = "Table Grid"
+            table.rows[0].cells[0].text = "关节"
+            for j, (h, _) in enumerate(section["cols"]):
+                table.rows[0].cells[j + 1].text = h
+            for gi in range(len(groups)):
+                for e in by_group[gi]:
+                    s = stats[e["idx"]]
+                    cells = table.add_row().cells
+                    cells[0].text = label_of(e, True)
+                    for j, (_, key) in enumerate(section["cols"]):
+                        cells[j + 1].text = (
+                            f"{s[key] * 100:.1f}%" if key == "util" else (str(s[key]) if key == "n_out" else fmt(s[key]))
+                        )
+        doc.add_paragraph(_joint_stat_conclusion(section, by_group, groups, stats, info["n_samples"], info))
         for rec in fig_records:
             if rec["kind"] != section["kind"]:
                 continue

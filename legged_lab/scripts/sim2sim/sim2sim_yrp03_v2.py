@@ -1594,6 +1594,26 @@ class MujocoRunner:
         fig.tight_layout()
         return save_plot_figure(fig, save_dir, f"{run_tag}_joint_velocity_torque.png")
 
+    def _plot_total_joint_power(self, save_dir: str | None = None, run_tag: str = "") -> str | None:
+        """所有关节功率绝对值之和随时间变化曲线。功率 = torque * velocity。"""
+        if not self.plot_joints or not self._plot_joint_vel or not self._plot_joint_tau:
+            return None
+        import matplotlib.pyplot as plt
+
+        t = np.asarray(self._plot_time, dtype=np.float64)
+        vel = np.asarray(self._plot_joint_vel, dtype=np.float64)
+        tau = np.asarray(self._plot_joint_tau, dtype=np.float64)
+        # 每时刻所有关节 |tau_i * qd_i| 求和
+        total_power = np.sum(np.abs(tau * vel), axis=1)
+        fig, ax = plt.subplots(1, 1, figsize=(9, 3.6), sharex=True)
+        ax.plot(t, total_power, color="tab:orange", linewidth=1.0)
+        ax.set_title("Total absolute joint power")
+        ax.set_xlabel("time (s)")
+        ax.set_ylabel("power (W)")
+        ax.grid(True, alpha=0.3)
+        fig.tight_layout()
+        return save_plot_figure(fig, save_dir, f"{run_tag}_total_joint_power.png")
+
     def _plot_all(self) -> list[str]:
         if not self.plot_joints:
             return []
@@ -1608,6 +1628,7 @@ class MujocoRunner:
             self._plot_tn_curves(save_dir, run_tag),
             self._plot_joint_positions(save_dir, run_tag),
             self._plot_joint_velocity_torque(save_dir, run_tag),
+            self._plot_total_joint_power(save_dir, run_tag),
         ]
         saved_paths = [path for path in saved_paths if path]
 
