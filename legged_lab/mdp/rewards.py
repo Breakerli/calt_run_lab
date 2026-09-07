@@ -549,12 +549,13 @@ def shoulder_pitch_pos_neg(
     env: BaseEnv | UltraMotionRunEnv,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     relax_speed: float = 15.0,
+    joint_names: tuple[str, str] = ("shoulder_pitch_l_joint", "shoulder_pitch_r_joint"),
     style_mask: list[int] | None = None,
 ) -> torch.Tensor:
     """Penalize absolute shoulder pitch position, relaxing as forward command increases."""
     asset: Articulation = env.scene[asset_cfg.name]
     shoulder_ids, _ = asset.find_joints(
-        name_keys=["shoulder_pitch_l_joint", "shoulder_pitch_r_joint"], preserve_order=True
+        name_keys=list(joint_names), preserve_order=True
     )
     penalty = torch.sum(torch.square(asset.data.joint_pos[:, shoulder_ids]), dim=1)
     relax = (torch.abs(env.command_generator.command[:, 0]) / max(relax_speed, 1e-3)).clamp(0.0, 1.0)

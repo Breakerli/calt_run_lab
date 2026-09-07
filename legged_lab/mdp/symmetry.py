@@ -42,13 +42,17 @@ def _get_joint_mirror_ids(env: VecEnv) -> tuple[list[int], list[int], list[int]]
       内部排序; 如果 env 没暴露这些字段, 退化到旧的位置硬编码 (假设腿 = [hip_roll,
       hip_yaw, hip_pitch, knee, ankle_pitch, ankle_roll]).
     """
-    left_leg = _to_list(getattr(env, "left_leg_ids", None))
-    right_leg = _to_list(getattr(env, "right_leg_ids", None))
-    left_arm = _to_list(getattr(env, "left_arm_ids", None))
-    right_arm = _to_list(getattr(env, "right_arm_ids", None))
-
-    left = left_leg + left_arm
-    right = right_leg + right_arm
+    # 完整镜像用 env.left/right_mirror_ids（覆盖整机所有左右关节）；缺省时退化到
+    # left_leg + left_arm（ARM 特征关节，AMP 布局要求 arm 只含 1 个 pitch 关节）。
+    left = _to_list(getattr(env, "left_mirror_ids", None))
+    right = _to_list(getattr(env, "right_mirror_ids", None))
+    if not left or not right:
+        left_leg = _to_list(getattr(env, "left_leg_ids", None))
+        right_leg = _to_list(getattr(env, "right_leg_ids", None))
+        left_arm = _to_list(getattr(env, "left_arm_ids", None))
+        right_arm = _to_list(getattr(env, "right_arm_ids", None))
+        left = left_leg + left_arm
+        right = right_leg + right_arm
 
     # 优先用按名字注册的 id (env.{hip_roll,hip_yaw,ankle_roll,...}_ids).
     # ─── 腿 ───
@@ -59,6 +63,8 @@ def _get_joint_mirror_ids(env: VecEnv) -> tuple[list[int], list[int], list[int]]
     shoulder_roll = _to_list(getattr(env, "shoulder_roll_ids", None))
     shoulder_yaw = _to_list(getattr(env, "shoulder_yaw_ids", None))
     elbow_yaw = _to_list(getattr(env, "elbow_yaw_ids", None))
+    wrist_roll = _to_list(getattr(env, "wrist_roll_ids", None))
+    wrist_yaw = _to_list(getattr(env, "wrist_yaw_ids", None))
     # ─── 腰 (中线; 仅 yaw / roll 在镜像下变号) ───
     waist_roll = _to_list(getattr(env, "waist_roll_ids", None))
     waist_yaw = _to_list(getattr(env, "waist_yaw_ids", None))
@@ -66,17 +72,21 @@ def _get_joint_mirror_ids(env: VecEnv) -> tuple[list[int], list[int], list[int]]
     # 只要任一按名字字段存在就走 named 分支 (3 个新 env 都满足).
     use_named = bool(hip_roll or hip_yaw or ankle_roll
                      or shoulder_roll or shoulder_yaw or elbow_yaw
+                     or wrist_roll or wrist_yaw
                      or waist_roll or waist_yaw)
 
     if use_named:
         negate = (
             list(hip_roll) + list(hip_yaw) + list(ankle_roll)
             + list(shoulder_roll) + list(shoulder_yaw) + list(elbow_yaw)
+            + list(wrist_roll) + list(wrist_yaw)
             + list(waist_roll) + list(waist_yaw)
         )
     else:
         # legacy fallback: 假设 left_leg = [hip_roll, hip_yaw, hip_pitch, knee, ankle_pitch, ankle_roll].
         # 注意: 这里不会处理 arm/waist 的 roll/yaw, 留给后续把这些 env 也补上 named id 字段.
+        left_leg = _to_list(getattr(env, "left_leg_ids", None))
+        right_leg = _to_list(getattr(env, "right_leg_ids", None))
         negate = []
         if len(left_leg) >= 6:
             negate.extend([left_leg[0], left_leg[1], left_leg[5]])
