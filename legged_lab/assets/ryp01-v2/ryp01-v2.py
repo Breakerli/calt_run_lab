@@ -21,9 +21,9 @@
 import math
 
 import isaaclab.sim as sim_utils
-from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
 
+from legged_lab.actuators import CustomDelayedPDActuatorCfg
 from legged_lab.assets import ISAAC_ASSET_DIR
 
 __all__ = [
@@ -71,6 +71,99 @@ ROBOT_01RYP_V2_DEFAULT_JOINT_POS = {
     "waist_yaw_joint": 0.0,
 }
 
+# --- Actuator constants (identical kinematics to ultra_GameYaw) ---
+
+ARMATURE_HIP_YAW = 0.048865
+ARMATURE_HIP_ROLL = 0.40318
+ARMATURE_HIP_PITCH = 0.40318
+ARMATURE_KNEE_PITCH = 0.40318
+ARMATURE_ANKLE_PITCH = 0.21448
+ARMATURE_SHOULDER_PITCH = 0.041125
+ARMATURE_WAIST_YAW = 0.048865
+
+EFFORT_LIMIT_HIP_YAW = 250
+EFFORT_LIMIT_HIP_ROLL = 657
+EFFORT_LIMIT_HIP_PITCH = 657
+EFFORT_LIMIT_KNEE_PITCH = 657
+EFFORT_LIMIT_ANKLE_PITCH = 400
+EFFORT_LIMIT_SHOULDER_PITCH = 140
+EFFORT_LIMIT_WAIST_YAW = 250
+
+VELOCITY_LIMIT_HIP_YAW = 20.9
+VELOCITY_LIMIT_HIP_ROLL = 18.8
+VELOCITY_LIMIT_HIP_PITCH = 26.1
+VELOCITY_LIMIT_KNEE_PITCH = 26.1
+VELOCITY_LIMIT_ANKLE_PITCH = 26.1
+VELOCITY_LIMIT_SHOULDER_PITCH = 26.1
+VELOCITY_LIMIT_WAIST_YAW = 20.9
+
+
+def _natural_freq(freq_hz: float) -> float:
+    return freq_hz * 2.0 * math.pi
+
+
+NATURAL_FREQ_HZ_HIP_YAW = 14.5
+NATURAL_FREQ_HZ_HIP_ROLL = 6.5
+NATURAL_FREQ_HZ_HIP_PITCH = 6.5
+NATURAL_FREQ_HZ_KNEE_PITCH = 6.5
+NATURAL_FREQ_HZ_ANKLE_PITCH = 3.5
+NATURAL_FREQ_HZ_SHOULDER_PITCH = 5.0
+NATURAL_FREQ_HZ_WAIST_YAW = 10.0
+
+DAMPING_RATIO_HIP_YAW = 1.5
+DAMPING_RATIO_HIP_ROLL = 1.2
+DAMPING_RATIO_HIP_PITCH = 1.2
+DAMPING_RATIO_KNEE_PITCH = 1.2
+DAMPING_RATIO_ANKLE_PITCH = 1.3
+DAMPING_RATIO_SHOULDER_PITCH = 1.5
+DAMPING_RATIO_WAIST_YAW = 1.5
+
+NATURAL_FREQ_HIP_YAW = _natural_freq(NATURAL_FREQ_HZ_HIP_YAW)
+NATURAL_FREQ_HIP_ROLL = _natural_freq(NATURAL_FREQ_HZ_HIP_ROLL)
+NATURAL_FREQ_HIP_PITCH = _natural_freq(NATURAL_FREQ_HZ_HIP_PITCH)
+NATURAL_FREQ_KNEE_PITCH = _natural_freq(NATURAL_FREQ_HZ_KNEE_PITCH)
+NATURAL_FREQ_ANKLE_PITCH = _natural_freq(NATURAL_FREQ_HZ_ANKLE_PITCH)
+NATURAL_FREQ_SHOULDER_PITCH = _natural_freq(NATURAL_FREQ_HZ_SHOULDER_PITCH)
+NATURAL_FREQ_WAIST_YAW = _natural_freq(NATURAL_FREQ_HZ_WAIST_YAW)
+
+# Original stiffness settings:
+STIFFNESS_HIP_YAW = 500
+STIFFNESS_HIP_ROLL = 700
+STIFFNESS_HIP_PITCH = 700
+STIFFNESS_KNEE_PITCH = 700
+STIFFNESS_ANKLE_PITCH = 100.0
+STIFFNESS_SHOULDER_PITCH = 50.0
+STIFFNESS_WAIST_YAW = 400.0
+
+# Original damping settings:
+DAMPING_HIP_YAW = 10
+DAMPING_HIP_ROLL = 20
+DAMPING_HIP_PITCH = 10
+DAMPING_KNEE_PITCH = 10
+DAMPING_ANKLE_PITCH = 6.0
+DAMPING_SHOULDER_PITCH = 3.0
+DAMPING_WAIST_YAW = 8.0
+
+
+MIN_ACTUATOR_DELAY = 0
+MAX_ACTUATOR_DELAY = 4
+
+TORQUE_CURVE_X1_HIP_YAW = 10.0
+TORQUE_CURVE_X1_HIP_ROLL = 12.0
+TORQUE_CURVE_X1_HIP_PITCH = 17.0
+TORQUE_CURVE_X1_KNEE_PITCH = 17.0
+TORQUE_CURVE_X1_ANKLE_PITCH = 17.0
+TORQUE_CURVE_X1_SHOULDER_PITCH = 13.0
+TORQUE_CURVE_X1_WAIST_YAW = 10.0
+
+TORQUE_CURVE_Y1_HIP_YAW = 150
+TORQUE_CURVE_Y1_HIP_ROLL = 600
+TORQUE_CURVE_Y1_HIP_PITCH = 600
+TORQUE_CURVE_Y1_KNEE_PITCH = 600
+TORQUE_CURVE_Y1_ANKLE_PITCH = 350
+TORQUE_CURVE_Y1_SHOULDER_PITCH = 100
+TORQUE_CURVE_Y1_WAIST_YAW = 150
+
 ROBOT_01RYP_V2_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
         # Export this file from urdf/01RYP-v2.urdf before using the Isaac asset.
@@ -86,7 +179,7 @@ ROBOT_01RYP_V2_CFG = ArticulationCfg(
             max_depenetration_velocity=1.0,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-            enabled_self_collisions=False, solver_position_iteration_count=8, solver_velocity_iteration_count=4
+            enabled_self_collisions=True, solver_position_iteration_count=8, solver_velocity_iteration_count=4
         ),
     ),
     init_state=ArticulationCfg.InitialStateCfg(
@@ -96,78 +189,111 @@ ROBOT_01RYP_V2_CFG = ArticulationCfg(
     ),
     soft_joint_pos_limit_factor=0.9,
     actuators={
-        "legs": ImplicitActuatorCfg(
+        "legs": CustomDelayedPDActuatorCfg(
             joint_names_expr=[
-                "hip_roll_.*_joint",
-                "hip_yaw_.*_joint",
-                "hip_pitch_.*_joint",
-                "knee_pitch_.*_joint",
+                "hip_yaw_.*",
+                "hip_roll_.*",
+                "hip_pitch_.*",
+                "knee_pitch_.*",
             ],
             effort_limit_sim={
-                "hip_roll_.*_joint": 657,
-                "hip_pitch_.*_joint": 657,
-                "hip_yaw_.*_joint": 190,
-                "knee_pitch_.*_joint": 657,
+                "hip_yaw_.*": EFFORT_LIMIT_HIP_YAW,
+                "hip_roll_.*": EFFORT_LIMIT_HIP_ROLL,
+                "hip_pitch_.*": EFFORT_LIMIT_HIP_PITCH,
+                "knee_pitch_.*": EFFORT_LIMIT_KNEE_PITCH,
             },
             velocity_limit_sim={
-                "hip_roll_.*_joint": 25.6,
-                "hip_pitch_.*_joint": 25.6,
-                "hip_yaw_.*_joint": 13.0,
-                "knee_pitch_.*_joint": 25.6,
+                "hip_yaw_.*": VELOCITY_LIMIT_HIP_YAW,
+                "hip_roll_.*": VELOCITY_LIMIT_HIP_ROLL,
+                "hip_pitch_.*": VELOCITY_LIMIT_HIP_PITCH,
+                "knee_pitch_.*": VELOCITY_LIMIT_KNEE_PITCH,
             },
             stiffness={
-                "hip_roll_.*_joint": 700,
-                "hip_pitch_.*_joint": 700,
-                "hip_yaw_.*_joint": 500,
-                "knee_pitch_.*_joint": 700,
+                "hip_yaw_.*": STIFFNESS_HIP_YAW,
+                "hip_roll_.*": STIFFNESS_HIP_ROLL,
+                "hip_pitch_.*": STIFFNESS_HIP_PITCH,
+                "knee_pitch_.*": STIFFNESS_KNEE_PITCH,
             },
             damping={
-                "hip_roll_.*_joint": 10,
-                "hip_pitch_.*_joint": 10,
-                "hip_yaw_.*_joint": 5,
-                "knee_pitch_.*_joint": 10,
+                "hip_yaw_.*": DAMPING_HIP_YAW,
+                "hip_roll_.*": DAMPING_HIP_ROLL,
+                "hip_pitch_.*": DAMPING_HIP_PITCH,
+                "knee_pitch_.*": DAMPING_KNEE_PITCH,
+            },
+            armature={
+                "hip_yaw_.*": ARMATURE_HIP_YAW,
+                "hip_roll_.*": ARMATURE_HIP_ROLL,
+                "hip_pitch_.*": ARMATURE_HIP_PITCH,
+                "knee_pitch_.*": ARMATURE_KNEE_PITCH,
+            },
+            min_delay=MIN_ACTUATOR_DELAY,
+            max_delay=MAX_ACTUATOR_DELAY,
+            X1={
+                "hip_yaw_.*": TORQUE_CURVE_X1_HIP_YAW,
+                "hip_roll_.*": TORQUE_CURVE_X1_HIP_ROLL,
+                "hip_pitch_.*": TORQUE_CURVE_X1_HIP_PITCH,
+                "knee_pitch_.*": TORQUE_CURVE_X1_KNEE_PITCH,
+            },
+            X2={
+                "hip_yaw_.*": VELOCITY_LIMIT_HIP_YAW,
+                "hip_roll_.*": VELOCITY_LIMIT_HIP_ROLL,
+                "hip_pitch_.*": VELOCITY_LIMIT_HIP_PITCH,
+                "knee_pitch_.*": VELOCITY_LIMIT_KNEE_PITCH,
+            },
+            Y1={
+                "hip_yaw_.*": TORQUE_CURVE_Y1_HIP_YAW,
+                "hip_roll_.*": TORQUE_CURVE_Y1_HIP_ROLL,
+                "hip_pitch_.*": TORQUE_CURVE_Y1_HIP_PITCH,
+                "knee_pitch_.*": TORQUE_CURVE_Y1_KNEE_PITCH,
+            },
+            Y2={
+                "hip_yaw_.*": EFFORT_LIMIT_HIP_YAW,
+                "hip_roll_.*": EFFORT_LIMIT_HIP_ROLL,
+                "hip_pitch_.*": EFFORT_LIMIT_HIP_PITCH,
+                "knee_pitch_.*": EFFORT_LIMIT_KNEE_PITCH,
             },
         ),
-        "feet": ImplicitActuatorCfg(
-            joint_names_expr=[
-                "ankle_pitch_.*_joint",
-            ],
-            effort_limit_sim={
-                "ankle_pitch_.*_joint": 180,
-            },
-            velocity_limit_sim={
-                "ankle_pitch_.*_joint": 26.0,
-            },
-            stiffness={
-                "ankle_pitch_.*_joint": 30,
-            },
-            damping={
-                "ankle_pitch_.*_joint": 2.5,
-            },
+        "feet": CustomDelayedPDActuatorCfg(
+            joint_names_expr=["ankle_pitch_.*"],
+            effort_limit_sim={"ankle_pitch_.*": EFFORT_LIMIT_ANKLE_PITCH},
+            velocity_limit_sim={"ankle_pitch_.*": VELOCITY_LIMIT_ANKLE_PITCH},
+            stiffness={"ankle_pitch_.*": STIFFNESS_ANKLE_PITCH},
+            damping={"ankle_pitch_.*": DAMPING_ANKLE_PITCH},
+            armature={"ankle_pitch_.*": ARMATURE_ANKLE_PITCH},
+            min_delay=MIN_ACTUATOR_DELAY,
+            max_delay=MAX_ACTUATOR_DELAY,
+            X1={"ankle_pitch_.*": TORQUE_CURVE_X1_ANKLE_PITCH},
+            X2={"ankle_pitch_.*": VELOCITY_LIMIT_ANKLE_PITCH},
+            Y1={"ankle_pitch_.*": TORQUE_CURVE_Y1_ANKLE_PITCH},
+            Y2={"ankle_pitch_.*": EFFORT_LIMIT_ANKLE_PITCH},
         ),
-        "shoulders": ImplicitActuatorCfg(
-            joint_names_expr=[
-                "shoulder_pitch_.*_joint",
-            ],
-            effort_limit_sim={
-                "shoulder_pitch_.*_joint": 52.5,
-            },
-            velocity_limit_sim={
-                "shoulder_pitch_.*_joint": 14.1,
-            },
-            stiffness={
-                "shoulder_pitch_.*_joint": 60,
-            },
-            damping={
-                "shoulder_pitch_.*_joint": 3,
-            },
+        "arms": CustomDelayedPDActuatorCfg(
+            joint_names_expr=["shoulder_pitch_.*"],
+            effort_limit_sim={"shoulder_pitch_.*": EFFORT_LIMIT_SHOULDER_PITCH},
+            velocity_limit_sim={"shoulder_pitch_.*": VELOCITY_LIMIT_SHOULDER_PITCH},
+            stiffness={"shoulder_pitch_.*": STIFFNESS_SHOULDER_PITCH},
+            damping={"shoulder_pitch_.*": DAMPING_SHOULDER_PITCH},
+            armature={"shoulder_pitch_.*": ARMATURE_SHOULDER_PITCH},
+            min_delay=MIN_ACTUATOR_DELAY,
+            max_delay=MAX_ACTUATOR_DELAY,
+            X1={"shoulder_pitch_.*": TORQUE_CURVE_X1_SHOULDER_PITCH},
+            X2={"shoulder_pitch_.*": VELOCITY_LIMIT_SHOULDER_PITCH},
+            Y1={"shoulder_pitch_.*": TORQUE_CURVE_Y1_SHOULDER_PITCH},
+            Y2={"shoulder_pitch_.*": EFFORT_LIMIT_SHOULDER_PITCH},
         ),
-        "waist": ImplicitActuatorCfg(
+        "waist": CustomDelayedPDActuatorCfg(
             joint_names_expr=["waist_yaw_joint"],
-            effort_limit_sim={"waist_yaw_joint": 250},
-            velocity_limit_sim={"waist_yaw_joint": 20.9},
-            stiffness={"waist_yaw_joint": 400},
-            damping={"waist_yaw_joint": 8},
+            effort_limit_sim={"waist_yaw_joint": EFFORT_LIMIT_WAIST_YAW},
+            velocity_limit_sim={"waist_yaw_joint": VELOCITY_LIMIT_WAIST_YAW},
+            stiffness={"waist_yaw_joint": STIFFNESS_WAIST_YAW},
+            damping={"waist_yaw_joint": DAMPING_WAIST_YAW},
+            armature={"waist_yaw_joint": ARMATURE_WAIST_YAW},
+            min_delay=MIN_ACTUATOR_DELAY,
+            max_delay=MAX_ACTUATOR_DELAY,
+            X1={"waist_yaw_joint": TORQUE_CURVE_X1_WAIST_YAW},
+            X2={"waist_yaw_joint": VELOCITY_LIMIT_WAIST_YAW},
+            Y1={"waist_yaw_joint": TORQUE_CURVE_Y1_WAIST_YAW},
+            Y2={"waist_yaw_joint": EFFORT_LIMIT_WAIST_YAW},
         ),
     },
 )
