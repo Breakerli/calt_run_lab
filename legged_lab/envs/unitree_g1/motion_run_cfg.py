@@ -27,7 +27,9 @@ Differences vs yrp03_v2:
 - AMP obs still tracks 15 feature joints (shoulder_pitch arm + 6-DoF legs +
   waist_yaw) -> 42-dim, same as yrp03_v2; the remaining 14 G1 joints are
   PD-held near default and excluded from AMP obs.
-- Motion datasets are yrp03_v2 placeholders until G1-retargeted data exists.
+- Motion datasets are retargeted from yrp03_v2 via
+  legged_lab/scripts/utils/retarget_yrp03_to_unitree_g1.py (URDF FK/IK, leg 6-DoF DLS IK,
+  scaled root height, G1 ee convention).
 """
 
 import math
