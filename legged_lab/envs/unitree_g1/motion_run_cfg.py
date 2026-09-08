@@ -462,7 +462,7 @@ class UnitreeG1MotionRunEnvCfg:
     # y / yaw 速度跟踪奖励用 step_dt/window 的 EMA（有效窗口约 window 秒）
     track_avg_vel_window_s: float = 0.5
     style_from_command: StyleFromCommandCfg = StyleFromCommandCfg()
-    amp_motion_files_display = [f"{_AMP_VIS}/run_14mps_play_newultra.txt"]
+    amp_motion_files_display = [f"{_AMP_VIS}/env000_vxp15p00_vyp0p00_wp0p00_vis.txt"]
     amp_motion_files_dict = AMP_MOTION_FILES_DICT
     amp_mirror_expert_motion: bool = True
     # 29-DoF robot / 42-dim AMP obs: AMP 只跟踪 15 个特征关节
