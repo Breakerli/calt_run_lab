@@ -250,8 +250,8 @@ class UnitreeG1MotionRunEnv(VecEnv):
             name_keys=["left_ankle_roll_joint", "right_ankle_roll_joint"], preserve_order=True
         )
         # G1 额外的手臂/腰 roll/yaw 关节 (镜像变号用; 全 pitch 关节如 elbow/waist_pitch 不变号).
-        # 19DoF 减臂 USD (肩仅 pitch+roll) 下 shoulder_yaw/wrist_* 已锁为 fixed,
-        # find_joints 查不到会 raise, 故按 robot 实际关节过滤, 缺失时置空表 (symmetry.py 容忍空表).
+        # 减臂 USD (19DoF 肩 pitch+roll / 17DoF 仅肩 pitch) 下 shoulder_yaw/wrist_* 等已锁为
+        # fixed, find_joints 查不到会 raise, 故按 robot 实际关节过滤, 缺失时置空表 (symmetry.py 容忍空表).
         _joint_names = set(self.robot.data.joint_names)
 
         def _find_optional(name_keys):
