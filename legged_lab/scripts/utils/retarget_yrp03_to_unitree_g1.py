@@ -90,6 +90,12 @@ ROBOT_NAMES = {
 }
 LEG_KEYS = ("j_hip_yaw", "j_hip_roll", "j_hip_pitch", "j_knee", "j_ankle_pitch", "j_ankle_roll")
 
+# 手臂整体前摆偏置 (rad): yrp03 源手臂自然下垂, G1 参考轨迹要求手臂整体再前摆该角度。
+# 绕 root 系 Y 轴 (横向) 旋转目标手臂向量, 使下垂手臂向 +X (前) 摆。
+ARM_SWING_FORWARD = np.pi / 2
+_c, _s = np.cos(ARM_SWING_FORWARD), np.sin(ARM_SWING_FORWARD)
+ARM_BIAS_ROT = np.array([[_c, 0.0, -_s], [0.0, 1.0, 0.0], [_s, 0.0, _c]])  # RotY(-θ)
+
 
 def N(robot: str, key: str, s: str) -> str:
     """按机器人取关节/连杆名, s in {"l", "r"}。"""
@@ -379,7 +385,9 @@ def solve_shoulder_ik(tgt: dict, idx_map: dict, q_waist: np.ndarray,
         qq[:, i_sh] = q[:, 0]
         pos, rot = fk_batch(sc_sh, qq)
         hand = pos[lnk] + np.einsum("nij,j->ni", rot[lnk], G1_ARM_VEC)
-        return (hand - (pos[lnk] + (hand_s - sh_pos_s) * arm_scale)), None
+        # 目标手臂向量 = 源手臂向量缩放后整体前摆 ARM_SWING_FORWARD
+        off = np.einsum("ij,nj->ni", ARM_BIAS_ROT, (hand_s - sh_pos_s) * arm_scale)
+        return (hand - (pos[lnk] + off)), None
 
     q, _, _ = dls_ik(resid, np.zeros((n, 1)), lo, hi, SH_ITERS, 1e-4)
     return q[:, 0]
