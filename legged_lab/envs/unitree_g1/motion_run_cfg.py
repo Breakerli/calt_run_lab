@@ -535,7 +535,7 @@ class UnitreeG1MotionRunEnvCfg:
         debug_vis=False,
         ranges=CommandRangesCfg(
             # 初始 vmax；勿与 curriculum_max 相同，否则 resume 易顶速开训
-            lin_vel_x=(-0.5, 8.6),
+            lin_vel_x=(-0.5, 5),  # g1 腿短, 课程从低速起步
             lin_vel_y=(-0.5, 0.5),
             ang_vel_z=(-0.5, 0.5),
             heading=(-math.pi / 2, math.pi / 2),
