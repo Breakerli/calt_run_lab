@@ -19,14 +19,17 @@
 """Unitree G1 29 DoF motion-run env/agent cfg, adapted from yrp03_v2 (same 6-DoF legs).
 
 Differences vs yrp03_v2:
-- Robot: UNITREE_G1_CFG (29 DoF; 6-DoF legs + 3 waist + 7-DoF arms). Body/joint
-  names carry the ``left_`` / ``right_`` prefix (e.g. ``left_ankle_roll_link``),
-  so all SceneEntityCfg name patterns use ``.*_...`` fullmatch regexes.
+- Robot: UNITREE_G1_19DOF_CFG (19 DoF; 6-DoF legs + 3 waist + 2-DoF arms with
+  only shoulder pitch/roll — shoulder yaw / elbow / wrists are locked fixed in
+  g1_19dof_rev_1_0.usd; the full 29-DoF UNITREE_G1_CFG remains available).
+  Body/joint names carry the ``left_`` / ``right_`` prefix (e.g.
+  ``left_ankle_roll_link``), so all SceneEntityCfg name patterns use ``.*_...``
+  fullmatch regexes.
 - Base/foot geometry: standing pelvis height 0.793 m (g1_mocap xml), foot sole
   offset 0.04 m (ankle_roll origin height from the URDF chain).
 - AMP obs still tracks 15 feature joints (shoulder_pitch arm + 6-DoF legs +
-  waist_yaw) -> 42-dim, same as yrp03_v2; the remaining 14 G1 joints are
-  PD-held near default and excluded from AMP obs.
+  waist_yaw) -> 42-dim, same as yrp03_v2; the remaining 4 G1 arm/waist joints
+  are PD-held near default and excluded from AMP obs.
 - Motion datasets are retargeted from yrp03_v2 via
   legged_lab/scripts/utils/retarget_yrp03_to_unitree_g1.py (URDF FK/IK, leg 6-DoF DLS IK,
   scaled root height, G1 ee convention).
@@ -48,7 +51,7 @@ from isaaclab_rl.rsl_rl import (  # noqa:F401
 )
 
 import legged_lab.mdp as mdp
-from legged_lab.assets.unitree_g1.unitree_g1 import UNITREE_G1_CFG, AMP_LOADER_KWARGS
+from legged_lab.assets.unitree_g1.unitree_g1 import UNITREE_G1_19DOF_CFG, AMP_LOADER_KWARGS
 from legged_lab.envs.base.base_config import (
     ActionDelayCfg,
     BaseSceneCfg,
@@ -474,7 +477,7 @@ class UnitreeG1MotionRunEnvCfg:
         max_episode_length_s=20.0,
         num_envs=4096,
         env_spacing=2.5,
-        robot=UNITREE_G1_CFG,
+        robot=UNITREE_G1_19DOF_CFG,
         terrain_type="plane",
         terrain_generator=None,
         max_init_terrain_level=0,

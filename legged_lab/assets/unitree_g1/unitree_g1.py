@@ -22,6 +22,9 @@ wrist_pitch / wrist_yaw); joint names carry the ``left_`` / ``right_``
 prefix and the root body is ``pelvis``. Effort / velocity limits are taken
 from g1_custom_collision_29dof.urdf; stiffness / damping / armature are
 tunable sim baselines (MJCF only defines normalized -1..1 motors).
+Two articulation variants are provided: UNITREE_G1_CFG (29 DoF) and
+UNITREE_G1_19DOF_CFG (arms reduced to shoulder pitch+roll by
+make_g1_reduced_arm_usd.py; used by default in the unitree_g1 motion tasks).
 """
 
 import isaaclab.sim as sim_utils
@@ -143,8 +146,7 @@ TORQUE_CURVE_Y1_WRIST_YAW = 4.5
 
 UNITREE_G1_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{ISAAC_ASSET_DIR}/unitree_g1/usd/g1_29dof_rev_1_0.usd",
-        activate_contact_sensors=True,
+        usd_path=f"{ISAAC_ASSET_DIR}/unitree_g1/usd/g1_29dof_rev_1_0.usd",        activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
             retain_accelerations=False,
@@ -431,6 +433,49 @@ UNITREE_G1_CFG = ArticulationCfg(
                 ".*_wrist_yaw_joint": EFFORT_LIMIT_WRIST_YAW,
             },
         ),
+    },
+)
+
+
+# ── 19 DoF 变体: 胳膊仅保留肩部两个自由度 (shoulder_pitch + shoulder_roll) ──
+# 由 make_g1_reduced_arm_usd.py 把 29DoF USD 的肩 yaw/肘/腕 (每侧 5 个) 锁为
+# fixed 关节生成 (g1_19dof_rev_1_0.usd); 小腿/腰/头不变, AMP 42 维特征关节仍齐全。
+def _subset_actuator(cfg, keep):
+    """从多关节 actuator cfg 中裁出 keep 正则子集 (参数值不变), 供减自由度变体复用。"""
+    from dataclasses import replace
+
+    return replace(
+        cfg,
+        joint_names_expr=list(keep),
+        effort_limit_sim={k: v for k, v in cfg.effort_limit_sim.items() if k in keep},
+        velocity_limit_sim={k: v for k, v in cfg.velocity_limit_sim.items() if k in keep},
+        stiffness={k: v for k, v in cfg.stiffness.items() if k in keep},
+        damping={k: v for k, v in cfg.damping.items() if k in keep},
+        armature={k: v for k, v in cfg.armature.items() if k in keep},
+        X1={k: v for k, v in cfg.X1.items() if k in keep},
+        X2={k: v for k, v in cfg.X2.items() if k in keep},
+        Y1={k: v for k, v in cfg.Y1.items() if k in keep},
+        Y2={k: v for k, v in cfg.Y2.items() if k in keep},
+    )
+
+
+_ARMS_19_KEEP = (".*_shoulder_pitch_joint", ".*_shoulder_roll_joint")
+
+UNITREE_G1_19DOF_CFG = ArticulationCfg(
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=f"{ISAAC_ASSET_DIR}/unitree_g1/usd/g1_19dof_rev_1_0.usd",
+        activate_contact_sensors=True,
+        rigid_props=UNITREE_G1_CFG.spawn.rigid_props,
+        articulation_props=UNITREE_G1_CFG.spawn.articulation_props,
+    ),
+    init_state=UNITREE_G1_CFG.init_state,
+    soft_joint_pos_limit_factor=UNITREE_G1_CFG.soft_joint_pos_limit_factor,
+    actuators={
+        "legs": UNITREE_G1_CFG.actuators["legs"],
+        "ankle_pitch": UNITREE_G1_CFG.actuators["ankle_pitch"],
+        "ankle_roll": UNITREE_G1_CFG.actuators["ankle_roll"],
+        "waist": UNITREE_G1_CFG.actuators["waist"],
+        "arms": _subset_actuator(UNITREE_G1_CFG.actuators["arms"], _ARMS_19_KEEP),
     },
 )
 

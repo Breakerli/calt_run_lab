@@ -250,22 +250,25 @@ class UnitreeG1MotionRunEnv(VecEnv):
             name_keys=["left_ankle_roll_joint", "right_ankle_roll_joint"], preserve_order=True
         )
         # G1 额外的手臂/腰 roll/yaw 关节 (镜像变号用; 全 pitch 关节如 elbow/waist_pitch 不变号).
-        self.shoulder_roll_ids, _ = self.robot.find_joints(
-            name_keys=["left_shoulder_roll_joint", "right_shoulder_roll_joint"], preserve_order=True
-        )
-        self.shoulder_yaw_ids, _ = self.robot.find_joints(
-            name_keys=["left_shoulder_yaw_joint", "right_shoulder_yaw_joint"], preserve_order=True
-        )
-        self.wrist_roll_ids, _ = self.robot.find_joints(
-            name_keys=["left_wrist_roll_joint", "right_wrist_roll_joint"], preserve_order=True
-        )
-        self.wrist_yaw_ids, _ = self.robot.find_joints(
-            name_keys=["left_wrist_yaw_joint", "right_wrist_yaw_joint"], preserve_order=True
-        )
+        # 19DoF 减臂 USD (肩仅 pitch+roll) 下 shoulder_yaw/wrist_* 已锁为 fixed,
+        # find_joints 查不到会 raise, 故按 robot 实际关节过滤, 缺失时置空表 (symmetry.py 容忍空表).
+        _joint_names = set(self.robot.data.joint_names)
+
+        def _find_optional(name_keys):
+            avail = [k for k in name_keys if k in _joint_names]
+            if not avail:
+                return []
+            ids, _ = self.robot.find_joints(name_keys=avail, preserve_order=True)
+            return ids
+
+        self.shoulder_roll_ids = _find_optional(["left_shoulder_roll_joint", "right_shoulder_roll_joint"])
+        self.shoulder_yaw_ids = _find_optional(["left_shoulder_yaw_joint", "right_shoulder_yaw_joint"])
+        self.wrist_roll_ids = _find_optional(["left_wrist_roll_joint", "right_wrist_roll_joint"])
+        self.wrist_yaw_ids = _find_optional(["left_wrist_yaw_joint", "right_wrist_yaw_joint"])
         self.waist_roll_ids, _ = self.robot.find_joints(
             name_keys=["waist_roll_joint"], preserve_order=True
         )
-        # 整机镜像左右交换列表 (leg 6 + arm 7, 覆盖动作/obs 的全部左右关节; waist 中线不交换).
+        # 整机镜像左右交换列表 (leg 6 + arm 全部左右关节; waist 中线不交换).
         # symmetry.py 优先用 left/right_mirror_ids；AMP 布局的 left_arm_ids 仍只有 shoulder_pitch。
         _LEFT_ARM_ALL = [
             "left_shoulder_pitch_joint",
@@ -287,10 +290,10 @@ class UnitreeG1MotionRunEnv(VecEnv):
         ]
         _RIGHT_LEG_NAMES = [n.replace("left_", "right_") for n in _LEFT_LEG_NAMES]
         self.left_mirror_ids, _ = self.robot.find_joints(
-            name_keys=_LEFT_LEG_NAMES + _LEFT_ARM_ALL, preserve_order=True
+            name_keys=_LEFT_LEG_NAMES + [n for n in _LEFT_ARM_ALL if n in _joint_names], preserve_order=True
         )
         self.right_mirror_ids, _ = self.robot.find_joints(
-            name_keys=_RIGHT_LEG_NAMES + _RIGHT_ARM_ALL, preserve_order=True
+            name_keys=_RIGHT_LEG_NAMES + [n for n in _RIGHT_ARM_ALL if n in _joint_names], preserve_order=True
         )
 
         self.obs_scales = self.cfg.normalization.obs_scales
