@@ -52,6 +52,13 @@ parser.add_argument(
     "Optional path; default: <log_dir>/play_logs/joint_state.csv",
 )
 
+parser.add_argument(
+    "--no-export",
+    action="store_true",
+    default=False,
+    help="Skip jit/onnx policy export (GRU ONNX export is slow) and go straight to the run loop.",
+)
+
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -231,50 +238,53 @@ def play():
 
     policy = runner.get_inference_policy(device=env.device)
 
-    export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
-    export_policy_as_jit(runner.alg.policy, runner.obs_normalizer, path=export_model_dir, filename="policy.pt")
-    export_policy_as_onnx(
-        runner.alg.policy, normalizer=runner.obs_normalizer, path=export_model_dir, filename="policy.onnx"
-    )
-    exported_pt_path = os.path.join(export_model_dir, "policy.pt")
-    exported_onnx_path = os.path.join(export_model_dir, "policy.onnx")
-    deploy_policy_dir = os.path.join(LEGGED_LAB_ROOT_DIR, "Exported_policy")
-    os.makedirs(deploy_policy_dir, exist_ok=True)
-    shutil.copy2(exported_pt_path, os.path.join(deploy_policy_dir, "policy.pt"))
-    if os.path.isfile(exported_onnx_path):
-        shutil.copy2(exported_onnx_path, os.path.join(deploy_policy_dir, "policy.onnx"))
-
-    # Export the Isaac internal joint order (robot.data.joint_names). The policy obs
-    # (joint_pos/vel) and actions are ordered by this internal order, which is only
-    # known at runtime. sim2sim reads this file to reorder MuJoCo <-> Isaac correctly.
-    try:
-        isaac_joint_names = list(env.robot.data.joint_names)
-        joint_names_txt = "\n".join(isaac_joint_names) + "\n"
-        for _dst in (
-            os.path.join(export_model_dir, "isaac_joint_names.txt"),
-            os.path.join(deploy_policy_dir, "isaac_joint_names.txt"),
-        ):
-            with open(_dst, "w", encoding="utf-8") as _f:
-                _f.write(joint_names_txt)
-        print(
-            f"[Play] Wrote Isaac joint order ({len(isaac_joint_names)} joints) -> "
-            f"{deploy_policy_dir}/isaac_joint_names.txt (sim2sim joint mapping)."
+    if not args_cli.no_export:
+        export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
+        export_policy_as_jit(runner.alg.policy, runner.obs_normalizer, path=export_model_dir, filename="policy.pt")
+        export_policy_as_onnx(
+            runner.alg.policy, normalizer=runner.obs_normalizer, path=export_model_dir, filename="policy.onnx"
         )
-    except Exception as _e:  # noqa: BLE001
-        print(f"[Play][WARN] Could not export isaac_joint_names.txt: {_e}")
+        exported_pt_path = os.path.join(export_model_dir, "policy.pt")
+        exported_onnx_path = os.path.join(export_model_dir, "policy.onnx")
+        deploy_policy_dir = os.path.join(LEGGED_LAB_ROOT_DIR, "Exported_policy")
+        os.makedirs(deploy_policy_dir, exist_ok=True)
+        shutil.copy2(exported_pt_path, os.path.join(deploy_policy_dir, "policy.pt"))
+        if os.path.isfile(exported_onnx_path):
+            shutil.copy2(exported_onnx_path, os.path.join(deploy_policy_dir, "policy.onnx"))
 
-    if expected_actor_dim is not None:
-        print(
-            f"[Play] Exported policy (obs history dim={expected_actor_dim}) -> {export_model_dir}. "
-            "HIM: policy.onnx + policy.pt; critic/height-scan not exported."
-        )
-    print(f"[Play] Copied -> {deploy_policy_dir}/policy.onnx (sim2sim default), policy.pt")
+        # Export the Isaac internal joint order (robot.data.joint_names). The policy obs
+        # (joint_pos/vel) and actions are ordered by this internal order, which is only
+        # known at runtime. sim2sim reads this file to reorder MuJoCo <-> Isaac correctly.
+        try:
+            isaac_joint_names = list(env.robot.data.joint_names)
+            joint_names_txt = "\n".join(isaac_joint_names) + "\n"
+            for _dst in (
+                os.path.join(export_model_dir, "isaac_joint_names.txt"),
+                os.path.join(deploy_policy_dir, "isaac_joint_names.txt"),
+            ):
+                with open(_dst, "w", encoding="utf-8") as _f:
+                    _f.write(joint_names_txt)
+            print(
+                f"[Play] Wrote Isaac joint order ({len(isaac_joint_names)} joints) -> "
+                f"{deploy_policy_dir}/isaac_joint_names.txt (sim2sim joint mapping)."
+            )
+        except Exception as _e:  # noqa: BLE001
+            print(f"[Play][WARN] Could not export isaac_joint_names.txt: {_e}")
+
+        if expected_actor_dim is not None:
+            print(
+                f"[Play] Exported policy (obs history dim={expected_actor_dim}) -> {export_model_dir}. "
+                "HIM: policy.onnx + policy.pt; critic/height-scan not exported."
+            )
+        print(f"[Play] Copied -> {deploy_policy_dir}/policy.onnx (sim2sim default), policy.pt")
+    else:
+        print("[Play] --no-export: skipped policy export; going straight to the run loop.")
 
     if not args_cli.headless:
         from legged_lab.utils.keyboard import Keyboard
 
         # --- 键盘实时调速：↑/↓ vx±0.5，←/→ wz±0.2；改过后不再每局重采样指令 ---
-        CMD_LIMITS = {"vx": (-1.0, 15.0, 0.5), "wz": (-1.0, 1.0, 0.2)}
+        CMD_LIMITS = {"vx": (-1.0, 8.0, 0.5), "wz": (-1.0, 1.0, 0.2)}
 
         def _bump_cmd(key, sign):
             lo, hi, step = CMD_LIMITS[key]
