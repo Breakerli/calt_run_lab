@@ -8,3 +8,8 @@ wandb
 MUJOCO_LOG.TXT
 .history
 /tmp
+Exported_policy/
+docs/
+.claude/
+.github/
+__pycache__/
