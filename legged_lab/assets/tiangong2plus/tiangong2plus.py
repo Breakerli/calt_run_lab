@@ -102,7 +102,7 @@ TORQUE_CURVE_Y1_WAIST_YAW = 91.0
 
 TIANGONG2PLUS_CFG = ArticulationCfg(
     spawn=sim_utils.UsdFileCfg(
-        usd_path=f"{ISAAC_ASSET_DIR}/tiangong2plus/usd/tiangong2_plus_urdf.usd",
+        usd_path=f"{ISAAC_ASSET_DIR}/tiangong2plus/usd/tiangong2_plus_20dof_lockwaist.usd",
         activate_contact_sensors=True,
         rigid_props=sim_utils.RigidBodyPropertiesCfg(
             disable_gravity=False,
@@ -128,7 +128,6 @@ TIANGONG2PLUS_CFG = ArticulationCfg(
             "hip_yaw_.*": 0.0,
             "hip_roll_.*": 0.0,
             "ankle_roll_.*": 0.0,
-            "waist_yaw_joint": 0.0,
             "shoulder_pitch_.*": 0.5,
             "shoulder_roll_.*": 0.0,
             "shoulder_yaw_.*": 0.0,
@@ -288,20 +287,6 @@ TIANGONG2PLUS_CFG = ArticulationCfg(
                 "shoulder_yaw_.*": EFFORT_LIMIT_SHOULDER,
                 "elbow_pitch_.*": EFFORT_LIMIT_ELBOW,
             },
-        ),
-        "waist": CustomDelayedPDActuatorCfg(
-            joint_names_expr=["waist_yaw_joint"],
-            effort_limit_sim={"waist_yaw_joint": EFFORT_LIMIT_WAIST_YAW},
-            velocity_limit_sim={"waist_yaw_joint": VELOCITY_LIMIT_WAIST_YAW},
-            stiffness={"waist_yaw_joint": STIFFNESS_WAIST_YAW},
-            damping={"waist_yaw_joint": DAMPING_WAIST_YAW},
-            armature={"waist_yaw_joint": ARMATURE_WAIST_YAW},
-            min_delay=MIN_ACTUATOR_DELAY,
-            max_delay=MAX_ACTUATOR_DELAY,
-            X1={"waist_yaw_joint": TORQUE_CURVE_X1_WAIST_YAW},
-            X2={"waist_yaw_joint": VELOCITY_LIMIT_WAIST_YAW},
-            Y1={"waist_yaw_joint": TORQUE_CURVE_Y1_WAIST_YAW},
-            Y2={"waist_yaw_joint": EFFORT_LIMIT_WAIST_YAW},
         ),
     },
 )

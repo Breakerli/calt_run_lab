@@ -161,7 +161,7 @@ def play():
     env_cfg.commands.use_curriculum = False
     env_cfg.commands.run_high_speed_sample_frac = None  # 否则 run 态 70% 重采样在 [7,10] 而非固定 10
     env_cfg.commands.resampling_time_range = (0.1, 0.1)
-    env_cfg.commands.ranges.lin_vel_x = (2.0, 2.0)
+    env_cfg.commands.ranges.lin_vel_x = (1.5, 1.5)
     # env_cfg.commands.ranges.lin_vel_x = (1.0, 1.0) # (0.3, 0.3) # (4.5, 4.5)
     env_cfg.commands.ranges.lin_vel_y = (0.0, 0.0)
     env_cfg.commands.ranges.ang_vel_z = (0.0, 0.0)

@@ -19,8 +19,9 @@
 """tiangong2plus (天工2.0plus) motion-run env/agent cfg, adapted from unitree_g1.
 
 Differences vs unitree_g1:
-- Robot: TIANGONG2PLUS_CFG (21 DoF; 6-DoF legs + waist_yaw 1 + 臂 4x2
-  shoulder pitch/roll/yaw + elbow_pitch)。关节/ link 命名为中缀式
+- Robot: TIANGONG2PLUS_CFG (20 DoF; 6-DoF legs + 臂 4x2 shoulder pitch/roll/yaw
+  + elbow_pitch)。waist_yaw 在锁腰 USD (tiangong2_plus_20dof_lockwaist.usd) 中
+  为 fixed 副 (实机腰恒 0, 仅回零时归位), 不是关节。关节/ link 命名为中缀式
   (``hip_roll_l_joint`` / ``ankle_roll_l_link``), 与 g1 的 ``left_``/``right_``
   前缀式不同; 无 waist_roll/waist_pitch、无 wrist_*、knee/elbow 带 _pitch 中缀
   (``knee_pitch_l_joint`` / ``elbow_pitch_l_joint``)。
@@ -31,7 +32,12 @@ Differences vs unitree_g1:
   原点下 0.057 m (asset cfg FK 推算)。
 - AMP obs 仍跟踪 15 特征关节 (shoulder_pitch arm + 6-DoF legs + waist_yaw)
   -> 42-dim; tiangong 额外的 shoulder_roll/shoulder_yaw/elbow_pitch 不进 AMP obs
-  (AMP 布局每侧 arm 只取 1 个 pitch 关节), 由 PD 保持在默认位。
+  (AMP 布局每侧 arm 只取 1 个 pitch 关节), 由 PD 保持在默认位。waist 段恒 0。
+- Policy IO 与实机部署框架对齐 (见 env 模块 docstring): obs/action 关节段为
+  部署网络序 20 关节 (DEPLOY_JOINT_ORDER; 锁腰 USD 恰 20 关节),
+  单帧 75 维 ([69:75] 步态相位占位恒 0), 10 帧历史 = 750 = SDK obs_num;
+  训练 50 Hz (decimation=8) 与部署推理频率一致;
+  scales: ang_vel 0.5 / dof_vel 0.05 / cmd (0.2,1,1), SDK 侧照抄。
 - NOTE: datasets 为 yrp03_v2 -> tiangong2plus 的重定向数据 (50Hz,
   文件名带 _50hz 后缀, FrameDuration=0.02), 由
   legged_lab/scripts/utils/retarget_yrp03_to_tiangong2plus.py 生成。
@@ -81,7 +87,7 @@ _AMP_MOTION_STAND = [f"{_AMP_EXPERT}/stand_ultra_yaw2_50hz.txt"]
 _AMP_MOTION_WALK = [f"{_AMP_EXPERT}/walk_ultra_yaw2_50hz.txt"]
 _AMP_MOTION_RUN = [
     f"{_AMP_EXPERT}/run_17200_9mps_50hz.txt",
-    f"{_AMP_EXPERT}/collected_20260602_160257/env000_vxp15p00_vyp0p00_wp0p00_50hz.txt",
+    # f"{_AMP_EXPERT}/collected_20260602_160257/env000_vxp15p00_vyp0p00_wp0p00_50hz.txt",
 ]
 AMP_MOTION_FILES_DICT = {
     "style_0": _AMP_MOTION_STAND,
@@ -202,42 +208,42 @@ class Tiangong2PlusRewardCfg:
             "style_mask": [2],
         },
     )
-    # 前脚落脚点相对质心的前向位移：逼近目标（大步幅），落在质心后硬惩罚（会前倾失衡摔倒）。
-    # 替换旧的 feet_air_time_run（奖励腾空时间会诱导"原地跳跃"退化解）。
-    # target_stride：正向奖励的平移门控——本局平均步幅达到该值才全额发放，防"原地踏步领奖"。
-    foot_strike_com_offset = RewTerm(
-        func=mdp.foot_strike_com_offset,
-        weight=5.0,
-        params={
-            "target_offset": 0.2,
-            "std": 0.1,
-            "behind_penalty": 2.0,
-            "target_stride": 0.5,
-            "style_mask": [2],
-        },
-    )
-    # 腾空占比约束：超过 0.7 惩罚（腾空只是手段、落脚点才是目的），防跳跃/坠落。
-    flight_ratio_neg = RewTerm(
-        func=mdp.flight_ratio_neg,
-        weight=-2.0,
-        params={"max_flight_ratio": 0.7, "style_mask": [2]},
-    )
-    feet_clearance_run = RewTerm(
-        func=mdp.feet_clearance,
-        weight=2.0,
-        params={
-            "target_height": 0.15,
-            "std": 0.05,
-            "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=[".*ankle_roll.*link"]),
-            "style_mask": [2],
-        },
-    )
-    # 直接步频惩罚：局内平均步频超过 target_cadence（步/秒）时线性惩罚，压掉高频小碎步。
-    cadence_neg = RewTerm(
-        func=mdp.cadence_neg,
-        weight=-2.0,
-        params={"target_cadence": 3.0, "style_mask": [2]},
-    )
+    # # 前脚落脚点相对质心的前向位移：逼近目标（大步幅），落在质心后硬惩罚（会前倾失衡摔倒）。
+    # # 替换旧的 feet_air_time_run（奖励腾空时间会诱导"原地跳跃"退化解）。
+    # # target_stride：正向奖励的平移门控——本局平均步幅达到该值才全额发放，防"原地踏步领奖"。
+    # foot_strike_com_offset = RewTerm(
+    #     func=mdp.foot_strike_com_offset,
+    #     weight=5.0,
+    #     params={
+    #         "target_offset": 0.2,
+    #         "std": 0.1,
+    #         "behind_penalty": 2.0,
+    #         "target_stride": 0.5,
+    #         "style_mask": [2],
+    #     },
+    # )
+    # # 腾空占比约束：超过 0.7 惩罚（腾空只是手段、落脚点才是目的），防跳跃/坠落。
+    # flight_ratio_neg = RewTerm(
+    #     func=mdp.flight_ratio_neg,
+    #     weight=-2.0,
+    #     params={"max_flight_ratio": 0.7, "style_mask": [2]},
+    # )
+    # feet_clearance_run = RewTerm(
+    #     func=mdp.feet_clearance,
+    #     weight=2.0,
+    #     params={
+    #         "target_height": 0.15,
+    #         "std": 0.05,
+    #         "sensor_cfg": SceneEntityCfg("contact_sensor", body_names=[".*ankle_roll.*link"]),
+    #         "style_mask": [2],
+    #     },
+    # )
+    # # 直接步频惩罚：局内平均步频超过 target_cadence（步/秒）时线性惩罚，压掉高频小碎步。
+    # cadence_neg = RewTerm(
+    #     func=mdp.cadence_neg,
+    #     weight=-2.0,
+    #     params={"target_cadence": 3.0, "style_mask": [2]},
+    # )
 
     # ── style_1/style_2: locomotion command tracking ──
     track_lin_vel_y_exp = RewTerm(
@@ -500,7 +506,6 @@ class Tiangong2PlusMotionRunEnvCfg:
         ),
     )
     robot: RobotCfg = RobotCfg(
-        # actor_obs_history_length=20,
         actor_obs_history_length=10,
         critic_obs_history_length=5,
         action_scale=0.25,
@@ -685,8 +690,8 @@ class Tiangong2PlusMotionRunEnvCfg:
         ),
         action_delay=ActionDelayCfg(enable=True, params={"max_delay": 1, "min_delay": 0}),
     )
-    # physics 400 Hz (dt=0.0025), policy/env step 100 Hz (step_dt=0.01)
-    sim: SimCfg = SimCfg(dt=0.0025, decimation=4, physx=PhysxCfg(gpu_max_rigid_patch_count=10 * 2**15))
+    # physics 400 Hz (dt=0.0025), policy/env step 50 Hz (step_dt=0.02), 与部署推理频率一致
+    sim: SimCfg = SimCfg(dt=0.0025, decimation=8, physx=PhysxCfg(gpu_max_rigid_patch_count=10 * 2**15))
 
 
 @configclass
@@ -770,6 +775,6 @@ class Tiangong2PlusMotionRunAgentCfg(RslRlOnPolicyRunnerCfg):
     amp_num_preload_transitions = 200000
     amp_task_reward_lerp = 0.8
     amp_discr_hidden_dims = [512, 256]
-    min_normalized_std = [0.05] * 21
+    min_normalized_std = [0.05] * 20  # 部署序动作维 (waist 已移除; rsl_rl 侧当前仅存储不用)
 
     resume = False  # GRU encoder is incompatible with MLP checkpoints

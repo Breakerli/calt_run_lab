@@ -491,7 +491,10 @@ def action_rate_weighted_l2(
     """Per-joint weighted first-order action rate (2026gym ``_reward_action_smooth_first``)."""
     buf = env.action_buffer._circular_buffer.buffer
     diff = buf[:, -1, :] - buf[:, -2, :]
-    w = _xhumanoid_joint_weights(env, _XHUMANOID_ACTION_RATE_WEIGHTS, "_xhumanoid_action_rate_weights")
+    w = _xhumanoid_joint_weights(
+        env, _XHUMANOID_ACTION_RATE_WEIGHTS, "_xhumanoid_action_rate_weights",
+        joint_ids=getattr(env, "deploy_joint_ids", None),
+    )
     penalty = torch.sum(w * torch.square(diff), dim=1) * _action_rate_speed_scale(
         env, min_speed_scale, max_speed_scale, speed_relax
     )
@@ -514,7 +517,10 @@ def action_rate2_weighted_l2(
     """Per-joint weighted second-order action rate (2026gym ``_reward_action_smooth_second``)."""
     buf = env.action_buffer._circular_buffer.buffer
     ddiff = buf[:, -1, :] - 2.0 * buf[:, -2, :] + buf[:, -3, :]
-    w = _xhumanoid_joint_weights(env, _XHUMANOID_ACTION_RATE_WEIGHTS, "_xhumanoid_action_rate_weights")
+    w = _xhumanoid_joint_weights(
+        env, _XHUMANOID_ACTION_RATE_WEIGHTS, "_xhumanoid_action_rate_weights",
+        joint_ids=getattr(env, "deploy_joint_ids", None),
+    )
     penalty = torch.sum(w * torch.square(ddiff), dim=1) * _action_rate_speed_scale(
         env, min_speed_scale, max_speed_scale, speed_relax
     )
@@ -2216,12 +2222,19 @@ def _xhumanoid_yaw_cmd_max(env: UltraMotionRunEnv) -> float:
 
 
 def _xhumanoid_joint_weights(
-    env: UltraMotionRunEnv, weight_by_name: dict[str, float], cache_attr: str
+    env: UltraMotionRunEnv, weight_by_name: dict[str, float], cache_attr: str,
+    joint_ids: list[int] | torch.Tensor | None = None,
 ) -> torch.Tensor:
     cached = getattr(env, cache_attr, None)
     if cached is not None:
         return cached
-    weights = [weight_by_name.get(str(n), 1.0) for n in env.robot.data.joint_names]
+    all_names = list(env.robot.data.joint_names)
+    if joint_ids is None:
+        names = all_names
+    else:
+        # 按给定关节子集 (如部署网络序 deploy_joint_ids) 取权重
+        names = [all_names[int(i)] for i in joint_ids]
+    weights = [weight_by_name.get(str(n), 1.0) for n in names]
     w = torch.tensor(weights, device=env.device, dtype=torch.float32)
     setattr(env, cache_attr, w)
     return w

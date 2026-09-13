@@ -18,11 +18,24 @@
 
 """tiangong2plus (天工2.0plus) AMP Multi-style motion-run env, adapted from unitree_g1.
 
-21 DoF (腿 6x2 + waist_yaw + 臂 4x2), 站立 pelvis 高 0.96 m。关节命名为中缀式
+20 DoF (腿 6x2 + 臂 4x2), 站立 pelvis 高 0.96 m。关节命名为中缀式
 (``hip_roll_l_joint``), 与 g1 的前缀式不同; 腿 URDF 链序 roll->pitch->yaw
 (g1 为 yaw->roll->pitch), 但 AMP 特征段按 find_joints name_keys 语义序
 [yaw, roll, pitch, knee, ankle_pitch, ankle_roll] 取, 与链序无关。
-无 waist_roll / wrist_* 关节, 相关 id 列表经 _find_optional 置空, symmetry 容忍。
+waist_yaw 在锁腰 USD (tiangong2_plus_20dof_lockwaist.usd) 中为 fixed 副
+(实机腰恒 0, 仅回零时归位), 不是关节; 无 waist_roll / wrist_* 关节,
+相关 id 列表经 _find_optional 置空, symmetry 容忍。
+
+Policy IO 与实机部署框架 (Deploy_Tienkung SDK) 完全对齐:
+- 使用锁腰 USD, articulation 恰为 20 关节; obs/action 关节段按部署网络序
+  DEPLOY_JOINT_ORDER 排布 (Isaac 内部关节序与部署序不同, obs gather /
+  action scatter 用 deploy_joint_ids 换算), SDK 侧索引表恒等、无需置换。
+- 单帧 75 维 = [0:3]角速度 + [3:6]重力投影 + [6:9]指令 + [9:69]关节
+  (pos/vel/上帧 action, 各 20, 部署序) + [69:75]步态相位占位 (恒 0,
+  与 SDK 75 维帧结构同构); 10 帧历史展平 = 750, 与 SDK obs_num 一致。
+- scales (ang_vel 0.5 / dof_vel 0.05 / cmd 0.2,1,1) 训练侧生效, SDK 侧照抄;
+  action = clip(±100) x 0.25 + default (20 维部署序)。
+- AMP 42 维特征含 waist 段 (humanoid15 布局), waist 锁 0 后以恒 0 填充。
 """
 import isaaclab.sim as sim_utils
 import isaacsim.core.utils.torch as torch_utils  # type: ignore
@@ -47,6 +60,27 @@ from legged_lab.mdp.commands import CustomVelocityCommand
 from legged_lab.utils.env_utils.scene import SceneCfg
 from rsl_rl.env import VecEnv
 from rsl_rl.utils import AMPLoaderDisplay, AMPLoader
+
+# --- Policy IO 部署序常量 ---
+# 部署网络序 (Deploy_Tienkung SDK mujoco_to_isaac_idx 对应的网络序, 已与
+# TienKung-Lab sim2sim.py 逐名字核对): 20 关节, 无 waist_yaw (实机腰恒 0,
+# 由 SDK 在回零时单独归位, 不在策略 IO 内)。obs/action 关节段按此序排布后,
+# SDK 侧索引表为恒等映射, 部署无需置换。
+DEPLOY_JOINT_ORDER = (
+    "hip_roll_l_joint", "hip_roll_r_joint",
+    "shoulder_pitch_l_joint", "shoulder_pitch_r_joint",
+    "hip_pitch_l_joint", "hip_pitch_r_joint",
+    "shoulder_roll_l_joint", "shoulder_roll_r_joint",
+    "hip_yaw_l_joint", "hip_yaw_r_joint",
+    "shoulder_yaw_l_joint", "shoulder_yaw_r_joint",
+    "knee_pitch_l_joint", "knee_pitch_r_joint",
+    "elbow_pitch_l_joint", "elbow_pitch_r_joint",
+    "ankle_pitch_l_joint", "ankle_pitch_r_joint",
+    "ankle_roll_l_joint", "ankle_roll_r_joint",
+)
+# 部署 SDK 单帧 75 维帧结构 [69:75] 为步态相位 (sin/cos + 占空比);
+# 本 env 无相位输入, 以恒 0 占位, 保持与 SDK 75 维帧结构完全同构 (obs_num=750)。
+GAIT_OBS_PAD = 6
 
 
 class Tiangong2PlusMotionRunEnv(VecEnv):
@@ -145,7 +179,14 @@ class Tiangong2PlusMotionRunEnv(VecEnv):
 
         self.max_episode_length_s = self.cfg.scene.max_episode_length_s
         self.max_episode_length = np.ceil(self.max_episode_length_s / self.step_dt)
-        self.num_actions = self.robot.data.default_joint_pos.shape[1]
+        # Policy IO 关节序 = 部署网络序 (DEPLOY_JOINT_ORDER, 20 关节)。waist_yaw 在
+        # 锁腰 USD (tiangong2_plus_20dof_lockwaist.usd) 中已改为 fixed 副, 不是
+        # 关节; Isaac 内部关节序与部署序不同, obs gather / action scatter 见下。
+        self.deploy_joint_ids, _ = self.robot.find_joints(
+            name_keys=list(DEPLOY_JOINT_ORDER), preserve_order=True
+        )
+        assert len(self.deploy_joint_ids) == self.robot.num_joints == len(DEPLOY_JOINT_ORDER)
+        self.num_actions = len(self.deploy_joint_ids)
         self.clip_actions = self.cfg.normalization.clip_actions
         self.clip_obs = self.cfg.normalization.clip_observations
 
@@ -240,9 +281,9 @@ class Tiangong2PlusMotionRunEnv(VecEnv):
             preserve_order=True,
         )
 
-        self.waist_yaw_ids, _ = self.robot.find_joints(
-            name_keys=["waist_yaw_joint"], preserve_order=True,
-        )
+        # 锁腰 USD: waist_yaw 为 fixed 副, 不在 articulation 关节中, 置空。
+        # AMP 42 维特征中的 waist 段以恒 0 填充 (waist 锁 0, 与 expert 近 0 一致)。
+        self.waist_yaw_ids = []
 
         # 显式按名字索引常用关节, 让 reward 函数不依赖 left_leg_ids 的内部位置.
         # 长度均为 2, 顺序固定为 [left, right] (由 name_keys 保证).
@@ -301,6 +342,20 @@ class Tiangong2PlusMotionRunEnv(VecEnv):
         self.right_mirror_ids, _ = self.robot.find_joints(
             name_keys=_RIGHT_LEG_NAMES + [n for n in _RIGHT_ARM_ALL if n in _joint_names], preserve_order=True
         )
+
+        # Policy obs/action 关节段是部署序 (deploy_joint_ids), 镜像索引表需换算到
+        # obs 坐标: 左右交换对 (与 left/right_mirror_ids 逐对对应, waist 不在 obs
+        # 内被过滤) + 变号集 (roll/yaw 轴关节: hip_roll/hip_yaw/ankle_roll/
+        # shoulder_roll/shoulder_yaw; 全 pitch 关节及 waist 不变号)。
+        # symmetry.py 的 _mirror_actor_current/_mirror_actions 优先使用本组列表。
+        _isaac_to_obs = {int(j): i for i, j in enumerate(self.deploy_joint_ids)}
+        self.obs_left_mirror_ids = [_isaac_to_obs[int(j)] for j in self.left_mirror_ids if int(j) in _isaac_to_obs]
+        self.obs_right_mirror_ids = [_isaac_to_obs[int(j)] for j in self.right_mirror_ids if int(j) in _isaac_to_obs]
+        _neg_isaac = (
+            list(self.hip_roll_ids) + list(self.hip_yaw_ids) + list(self.ankle_roll_ids)
+            + list(self.shoulder_roll_ids) + list(self.shoulder_yaw_ids)
+        )
+        self.obs_negate_mirror_ids = [_isaac_to_obs[int(j)] for j in _neg_isaac if int(j) in _isaac_to_obs]
 
         self.obs_scales = self.cfg.normalization.obs_scales
         cmd_scale = self.obs_scales.commands
@@ -379,7 +434,7 @@ class Tiangong2PlusMotionRunEnv(VecEnv):
         self.refresh_material_on_reset = (
             priv.refresh_material_on_reset and self._domain_rand_material_on_reset()
         )
-        # base_h(1)+vel_yaw(3)+feet_vz(2)+fz(2)+contact(2)+h_err(1)+clearance(2)+domain(2+3*n_dof)
+        # base_h(1)+vel_yaw(3)+feet_vz(2)+fz(2)+contact(2)+h_err(1)+clearance(2)+domain(2+3*n_joints)
         self.critic_extra_dim = 15 + 3 * self.num_actions
 
         hs_cfg = self.cfg.scene.height_scanner
@@ -471,20 +526,16 @@ class Tiangong2PlusMotionRunEnv(VecEnv):
         # # 260515 from eric zhao
         dof_pos[:, self.left_leg_ids[:5]] = visual_motion_frame[6:11]  # ankle_roll(6th) stays 0
         dof_pos[:, self.right_leg_ids[:5]] = visual_motion_frame[11:16]  # ankle_roll(6th) stays 0
-        
-        dof_pos[:, self.waist_yaw_ids] = visual_motion_frame[16]
-        
+
         dof_pos[:, self.left_arm_ids] = visual_motion_frame[17]
         dof_pos[:, self.right_arm_ids] = visual_motion_frame[18]
-        
+
         lin_vel = visual_motion_frame[19:22].clone()
         ang_vel = visual_motion_frame[22:25].clone()
-        
+
         dof_vel[:, self.left_leg_ids[:5]]  = visual_motion_frame[25:30]
         dof_vel[:, self.right_leg_ids[:5]] = visual_motion_frame[30:35]
-        
-        dof_vel[:, self.waist_yaw_ids] = visual_motion_frame[35]
-        
+
         dof_vel[:, self.left_arm_ids]  = visual_motion_frame[36]
         dof_vel[:, self.right_arm_ids] = visual_motion_frame[37]
         
@@ -566,20 +617,20 @@ class Tiangong2PlusMotionRunEnv(VecEnv):
         self.right_arm_dof_pos = dof_pos[:, self.right_arm_ids]
         self.left_arm_dof_vel = dof_vel[:, self.left_arm_ids]
         self.right_arm_dof_vel = dof_vel[:, self.right_arm_ids]
-        self.waist_yaw_dof_pos = dof_pos[:, self.waist_yaw_ids]
-        self.waist_yaw_dof_vel = dof_vel[:, self.waist_yaw_ids]
+        # waist 已锁为 fixed 副 (锁腰 USD), AMP 特征 waist 段恒 0
+        waist_zeros = torch.zeros(dof_pos.shape[0], 1, dtype=dof_pos.dtype, device=dof_pos.device)
         return torch.cat(
             (
                 self.right_arm_dof_pos,
                 self.left_arm_dof_pos,
                 self.right_leg_dof_pos,
                 self.left_leg_dof_pos,
-                self.waist_yaw_dof_pos,
+                waist_zeros,
                 self.right_arm_dof_vel,
                 self.left_arm_dof_vel,
                 self.right_leg_dof_vel,
                 self.left_leg_dof_vel,
-                self.waist_yaw_dof_vel,
+                waist_zeros,
                 left_hand_pos,
                 right_hand_pos,
                 left_foot_pos,
@@ -765,19 +816,26 @@ class Tiangong2PlusMotionRunEnv(VecEnv):
         ang_vel = robot.data.root_ang_vel_b
         projected_gravity = robot.data.projected_gravity_b
         command = self.command_generator.command
-        joint_pos = robot.data.joint_pos - robot.data.default_joint_pos
-        joint_vel = robot.data.joint_vel - robot.data.default_joint_vel
+        # 关节段按部署网络序 (deploy_joint_ids, 20 关节, 无 waist) 取值
+        joint_pos = robot.data.joint_pos[:, self.deploy_joint_ids] - robot.data.default_joint_pos[:, self.deploy_joint_ids]
+        joint_vel = robot.data.joint_vel[:, self.deploy_joint_ids] - robot.data.default_joint_vel[:, self.deploy_joint_ids]
         action = self.action_buffer._circular_buffer.buffer[:, -1, :]
 
-        # no-gait actor obs: 无步态相位、无 style one-hot（style 由 |cmd_x| 推断；AMP 仍用 style_ids）
+        # 单帧 75 维, 与部署 SDK 帧结构同构: [0:69] 本 env 观测 (无 style one-hot,
+        # style 由 |cmd_x| 推断; AMP 仍用 style_ids) + [69:75] 步态相位占位 (恒 0,
+        # SDK 侧 gait_phase 输出置零即完全一致)。
+        gait_pad = torch.zeros(
+            robot.data.joint_pos.shape[0], GAIT_OBS_PAD, dtype=torch.float, device=self.device
+        )
         current_actor_obs = torch.cat(
             [
                 ang_vel * self.obs_scales.ang_vel,  # 3
                 projected_gravity * self.obs_scales.projected_gravity,  # 3
                 command * self.command_obs_scale,  # 3 (lin_vel_x, lin_vel_y, ang_vel_z)
-                joint_pos * self.obs_scales.joint_pos,  # num_actions
-                joint_vel * self.obs_scales.joint_vel,  # num_actions
-                action * self.obs_scales.actions,  # num_actions
+                joint_pos * self.obs_scales.joint_pos,  # num_actions (部署序)
+                joint_vel * self.obs_scales.joint_vel,  # num_actions (部署序)
+                action * self.obs_scales.actions,  # num_actions (部署序)
+                gait_pad,  # GAIT_OBS_PAD (部署帧结构占位, 恒 0)
             ],
             dim=-1,
         )
@@ -790,7 +848,7 @@ class Tiangong2PlusMotionRunEnv(VecEnv):
         current_actor_obs, current_critic_obs = self.compute_current_observations()
         self.num_one_step_obs = int(current_actor_obs.shape[1])
         self.num_one_step_critic_obs = int(current_critic_obs.shape[1])
-        # root_lin_vel_yaw in critic extra: actor(48) + base_height(1)
+        # root_lin_vel_yaw in critic extra: actor(one_step) + base_height(1)
         self.him_vel_index_in_critic = self.num_one_step_obs + 1
         if self.add_noise:
             current_actor_obs += (2 * torch.rand_like(current_actor_obs) - 1) * self.noise_scale_vec
@@ -888,8 +946,14 @@ class Tiangong2PlusMotionRunEnv(VecEnv):
         delayed_actions = self.action_buffer.compute(actions)
         self.action = torch.clip(delayed_actions, -self.clip_actions, self.clip_actions).to(self.device)
 
+        # 部署序 20 维 action -> Isaac 内部关节序 (同 20 关节的置换, waist 已是
+        # fixed 副不参与; 与实机一致 —— SDK 仅在回零时归位腰, MLP 态不控腰)。
+        isaac_action = torch.zeros(
+            self.num_envs, self.robot.num_joints, dtype=self.action.dtype, device=self.device
+        )
+        isaac_action[:, self.deploy_joint_ids] = self.action
         processed_actions = (
-            self.action * self.action_scale + self.robot.data.default_joint_pos + self.joint_pos_bias
+            isaac_action * self.action_scale + self.robot.data.default_joint_pos + self.joint_pos_bias
         )
 
         self.avg_feet_force_per_step = torch.zeros(
@@ -1010,12 +1074,12 @@ class Tiangong2PlusMotionRunEnv(VecEnv):
     @property
     def actor_obs_dim(self) -> int:
         """Flattened actor observation dim (deploy / sim2sim / export)."""
-        return int(self.cfg.robot.actor_obs_history_length) * (9 + self.num_actions * 3)
+        return int(self.cfg.robot.actor_obs_history_length) * (9 + self.num_actions * 3 + GAIT_OBS_PAD)
 
     @property
     def critic_obs_dim(self) -> int:
         """Flattened critic observation dim (training only)."""
-        actor_step = 9 + self.num_actions * 3
+        actor_step = 9 + self.num_actions * 3 + GAIT_OBS_PAD
         critic_step = actor_step + self.critic_extra_dim
         return int(self.cfg.robot.critic_obs_history_length) * critic_step + self.num_height_scan
 
@@ -1256,18 +1320,20 @@ class Tiangong2PlusMotionRunEnv(VecEnv):
         right_foot_pos = body_state[:, self.feet_body_ids[1], :3] - root_pos
         left_foot_pos = quat_apply(quat_conjugate(root_quat), left_foot_pos)
         right_foot_pos = quat_apply(quat_conjugate(root_quat), right_foot_pos)
+        # waist 已锁为 fixed 副 (锁腰 USD), AMP 特征 waist 段恒 0
+        waist_zeros = torch.zeros(joint_pos.shape[0], 1, dtype=joint_pos.dtype, device=joint_pos.device)
         return torch.cat(
             (
                 joint_pos[:, self.right_arm_ids],
                 joint_pos[:, self.left_arm_ids],
                 joint_pos[:, self.right_leg_ids],
                 joint_pos[:, self.left_leg_ids],
-                joint_pos[:, self.waist_yaw_ids],
+                waist_zeros,
                 joint_vel[:, self.right_arm_ids],
                 joint_vel[:, self.left_arm_ids],
                 joint_vel[:, self.right_leg_ids],
                 joint_vel[:, self.left_leg_ids],
-                joint_vel[:, self.waist_yaw_ids],
+                waist_zeros,
                 left_hand_pos,
                 right_hand_pos,
                 left_foot_pos,

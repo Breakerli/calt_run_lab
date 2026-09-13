@@ -96,6 +96,11 @@ def _get_joint_mirror_ids(env: VecEnv) -> tuple[list[int], list[int], list[int]]
 
 
 def _get_actor_base_dim(env: VecEnv) -> int:
+    # 优先用 env 实际单帧维度 (tiangong2plus 等带部署帧结构占位的 env,
+    # num_one_step_obs = 9 + num_actions*3 + gait_pad); 缺省回退纯关节布局。
+    one_step = getattr(env, "num_one_step_obs", None)
+    if one_step:
+        return int(one_step)
     num_actions = int(getattr(env, "num_actions"))
     # ang(3)+grav(3)+cmd(3) + dof_pos/vel/action (no gait phase, no style one-hot)
     return 9 + num_actions * 3
@@ -110,9 +115,19 @@ def _get_critic_base_dim(env: VecEnv) -> int:
     return _get_actor_base_dim(env) + _get_critic_extra_dim(env)
 
 
+def _get_obs_mirror_ids(env: VecEnv) -> tuple[list[int], list[int], list[int]]:
+    """镜像索引: 优先 obs/action 坐标 (部署关节序 env, 如 tiangong2plus),
+    缺省用 Isaac 关节坐标 (obs 关节段 = Isaac 序的 env)。"""
+    left = getattr(env, "obs_left_mirror_ids", None)
+    right = getattr(env, "obs_right_mirror_ids", None)
+    negate = getattr(env, "obs_negate_mirror_ids", None)
+    if left is not None and right is not None and negate is not None:
+        return left, right, negate
+    return _get_joint_mirror_ids(env)
+
+
 def _mirror_critic_extra(obs: torch.Tensor, env: VecEnv, offset: int) -> None:
     """Mirror nogait-style critic extras after actor block."""
-    num_actions = int(getattr(env, "num_actions"))
     left, right, negate = _get_joint_mirror_ids(env)
 
     o = offset
@@ -122,8 +137,10 @@ def _mirror_critic_extra(obs: torch.Tensor, env: VecEnv, offset: int) -> None:
     for seg_start in (o + 4, o + 6, o + 8, o + 11):
         _swap_pairs(obs, [0], [1], offset=seg_start)
     # domain_rand: friction, restitution invariant; then p, d, motor per joint
+    # (Isaac 全关节宽, 含 waist; 与 actor 的部署序无关)
+    n_isaac = int(env.robot.num_joints)
     d0 = o + 13
-    for seg in (d0 + 2, d0 + 2 + num_actions, d0 + 2 + 2 * num_actions):
+    for seg in (d0 + 2, d0 + 2 + n_isaac, d0 + 2 + 2 * n_isaac):
         _swap_pairs(obs, left, right, offset=seg)
         _negate_indices(obs, negate, offset=seg)
 
@@ -164,7 +181,7 @@ def _mirror_actor_current(obs: torch.Tensor, env: VecEnv) -> torch.Tensor:
     jvel_start = jpos_start + num_actions
     act_start = jvel_start + num_actions
 
-    left, right, negate = _get_joint_mirror_ids(env)
+    left, right, negate = _get_obs_mirror_ids(env)
     _swap_pairs(obs_m, left, right, offset=jpos_start)
     _swap_pairs(obs_m, left, right, offset=jvel_start)
     _swap_pairs(obs_m, left, right, offset=act_start)
@@ -198,7 +215,7 @@ def _mirror_height_scan_extra(extra: torch.Tensor, env: VecEnv) -> torch.Tensor:
 
 def _mirror_actions(actions: torch.Tensor, env: VecEnv) -> torch.Tensor:
     act_m = actions.clone()
-    left, right, negate = _get_joint_mirror_ids(env)
+    left, right, negate = _get_obs_mirror_ids(env)
     _swap_pairs(act_m, left, right, offset=0)
     _negate_indices(act_m, negate, offset=0)
     return act_m
