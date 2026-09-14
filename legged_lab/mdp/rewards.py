@@ -573,6 +573,37 @@ def shoulder_pitch_pos_neg(
     return penalty * mask
 
 
+def arm_extra_pos_neg(
+    env: BaseEnv | UltraMotionRunEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    relax_speed: float = 15.0,
+    joint_names: tuple[str, ...] = (
+        "shoulder_roll_l_joint", "shoulder_roll_r_joint",
+        "shoulder_yaw_l_joint", "shoulder_yaw_r_joint",
+        "elbow_pitch_l_joint", "elbow_pitch_r_joint",
+    ),
+    style_mask: list[int] | None = None,
+) -> torch.Tensor:
+    """Penalize arm roll/yaw/elbow deviation from default joint pos, relaxing as forward command increases.
+
+    AMP 特征只跟踪 shoulder_pitch, 这几个关节无风格约束, 需要显式姿态正则防止
+    policy 把它们当作免费平衡配重 (如跑步时手臂侧平举)。
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    joint_ids, _ = asset.find_joints(
+        name_keys=list(joint_names), preserve_order=True
+    )
+    pos_err = asset.data.joint_pos[:, joint_ids] - asset.data.default_joint_pos[:, joint_ids]
+    penalty = torch.sum(torch.square(pos_err), dim=1)
+    relax = (torch.abs(env.command_generator.command[:, 0]) / max(relax_speed, 1e-3)).clamp(0.0, 1.0)
+    penalty = penalty * (1.0 - relax)
+    if style_mask is None:
+        mask = torch.ones_like(env.style_ids)
+    else:
+        mask = torch.isin(env.style_ids, torch.tensor(style_mask, device=env.style_ids.device)).float()
+    return penalty * mask
+
+
 def shoulder_pitch_vel_neg(
     env: BaseEnv | UltraMotionRunEnv,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),

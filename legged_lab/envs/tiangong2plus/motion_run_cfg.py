@@ -409,6 +409,13 @@ class Tiangong2PlusRewardCfg:
             "joint_names": ("shoulder_pitch_l_joint", "shoulder_pitch_r_joint"),
         },
     )
+    # AMP 只跟踪 shoulder_pitch; roll/yaw/elbow 无风格约束, 罚偏离 default 防止
+    # policy 把手臂当免费平衡配重 ( emergent 侧平举 )。
+    arm_extra_pos_neg = RewTerm(
+        func=mdp.arm_extra_pos_neg,
+        weight=-1.0,
+        params={"relax_speed": 15.0},
+    )
     ang_vel_xy_l2 = RewTerm(func=mdp.ang_vel_xy_l2, weight=-0.5)
     body_contact_neg = RewTerm(
         func=mdp.body_contact_neg,
