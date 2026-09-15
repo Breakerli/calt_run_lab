@@ -10,7 +10,8 @@ ankle_pitch,ankle_roll] 取, 不受影响) + 腰 waist_yaw 1 + 臂 4x2 (shoulder
 pitch/roll/yaw + elbow_pitch)。root body ``pelvis``, 脚为 ``ankle_roll_*_link``。
 
 effort/velocity limit 取自 tiangong2_plus_urdf.urdf (与关键参数 CSV 一致);
-stiffness/damping/armature/力矩曲线暂无实测整定, 沿用 yrp03_v2 的基线 (可调)。
+stiffness/damping 取自实机部署配置 tg22_config.yaml (kp/kd_p);
+armature/力矩曲线暂无实测整定, 沿用 yrp03_v2 的基线 (可调)。
 站立 pelvis 高 0.96 = 站立角 (hip_pitch -15°/knee +30°/ankle -15°) 腿 FK
 (ankle_roll 原点 -0.9044) + 脚掌网格偏置 (sole 在 ankle_roll 原点下 0.057)。
 """
@@ -58,26 +59,33 @@ VELOCITY_LIMIT_SHOULDER = 14.137166941154069
 VELOCITY_LIMIT_ELBOW = 14.137166941154069
 VELOCITY_LIMIT_WAIST_YAW = 9.215338450530059
 
-# --- stiffness / damping (tunable baseline, 沿用 yrp03_v2) ---
+# --- stiffness / damping (取自部署配置 tg22_config.yaml joint_kp_p/joint_kd_p,
+# 机器人电机序: 腿 hip_roll/hip_pitch/hip_yaw/knee/ankle_pitch/ankle_roll,
+# 臂 shoulder_pitch/shoulder_roll/shoulder_yaw/elbow; 左右对称) ---
+# 踝关节为串联弹性 (SEA), kp=15 远低于旧基线, 属刻意合规, 勿按普通关节调大。
 STIFFNESS_HIP_YAW = 500.0
 STIFFNESS_HIP_ROLL = 700.0
 STIFFNESS_HIP_PITCH = 700.0
 STIFFNESS_KNEE_PITCH = 700.0
-STIFFNESS_ANKLE_PITCH = 100.0
-STIFFNESS_ANKLE_ROLL = 40.0
-STIFFNESS_SHOULDER = 50.0
-STIFFNESS_ELBOW = 50.0
-STIFFNESS_WAIST_YAW = 400.0
+STIFFNESS_ANKLE_PITCH = 15.0
+STIFFNESS_ANKLE_ROLL = 15.0
+STIFFNESS_SHOULDER_PITCH = 60.0
+STIFFNESS_SHOULDER_ROLL = 20.0
+STIFFNESS_SHOULDER_YAW = 10.0
+STIFFNESS_ELBOW = 10.0
+STIFFNESS_WAIST_YAW = 400.0  # 锁腰, 不在 YAML 内, 沿用基线
 
-DAMPING_HIP_YAW = 10.0
+DAMPING_HIP_YAW = 15.0
 DAMPING_HIP_ROLL = 20.0
-DAMPING_HIP_PITCH = 10.0
+DAMPING_HIP_PITCH = 20.0
 DAMPING_KNEE_PITCH = 10.0
-DAMPING_ANKLE_PITCH = 6.0
-DAMPING_ANKLE_ROLL = 2.0
-DAMPING_SHOULDER = 3.0
-DAMPING_ELBOW = 3.0
-DAMPING_WAIST_YAW = 8.0
+DAMPING_ANKLE_PITCH = 1.25
+DAMPING_ANKLE_ROLL = 1.25
+DAMPING_SHOULDER_PITCH = 3.0
+DAMPING_SHOULDER_ROLL = 1.5
+DAMPING_SHOULDER_YAW = 1.0
+DAMPING_ELBOW = 1.0
+DAMPING_WAIST_YAW = 8.0  # 锁腰, 不在 YAML 内, 沿用基线
 
 # --- 力矩曲线 (tunable baseline, 沿用 yrp03_v2) ---
 TORQUE_CURVE_X1_HIP_YAW = 10.0
@@ -244,15 +252,15 @@ TIANGONG2PLUS_CFG = ArticulationCfg(
                 "elbow_pitch_.*": VELOCITY_LIMIT_ELBOW,
             },
             stiffness={
-                "shoulder_pitch_.*": STIFFNESS_SHOULDER,
-                "shoulder_roll_.*": STIFFNESS_SHOULDER,
-                "shoulder_yaw_.*": STIFFNESS_SHOULDER,
+                "shoulder_pitch_.*": STIFFNESS_SHOULDER_PITCH,
+                "shoulder_roll_.*": STIFFNESS_SHOULDER_ROLL,
+                "shoulder_yaw_.*": STIFFNESS_SHOULDER_YAW,
                 "elbow_pitch_.*": STIFFNESS_ELBOW,
             },
             damping={
-                "shoulder_pitch_.*": DAMPING_SHOULDER,
-                "shoulder_roll_.*": DAMPING_SHOULDER,
-                "shoulder_yaw_.*": DAMPING_SHOULDER,
+                "shoulder_pitch_.*": DAMPING_SHOULDER_PITCH,
+                "shoulder_roll_.*": DAMPING_SHOULDER_ROLL,
+                "shoulder_yaw_.*": DAMPING_SHOULDER_YAW,
                 "elbow_pitch_.*": DAMPING_ELBOW,
             },
             armature={
