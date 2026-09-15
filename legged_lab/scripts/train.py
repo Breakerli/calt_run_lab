@@ -130,11 +130,34 @@ def train():
         dump_yaml(os.path.join(log_dir, "params", "agent.yaml"), agent_cfg)
 
     runner.learn(num_learning_iterations=agent_cfg.max_iterations, init_at_random_ep_len=True)
+    print("[INFO] Training loop finished; final checkpoint saved. Closing logger...", flush=True)
+    writer = getattr(runner, "writer", None)
+    if writer is not None:
+        writer.close()
+        if getattr(runner, "logger_type", "tensorboard") in ("wandb", "neptune"):
+            writer.stop()
+    print("[INFO] Training completed; logs flushed.", flush=True)
 
 
 if __name__ == "__main__":
     try:
         train()
+        if args_cli.headless:
+            # 训练产物已经保存；无界面模式跳过可能卡死的 Isaac 原生插件清理。
+            import sys
+
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(0)
+    except BaseException:
+        # 避免 simulation_app.close() 卡住并遮蔽真正的训练异常。
+        import sys
+        import traceback
+
+        traceback.print_exc()
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(1)
     finally:
         try:
             simulation_app.close()
