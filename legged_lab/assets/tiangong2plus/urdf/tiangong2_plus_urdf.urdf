@@ -9,7 +9,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/pelvis.STL" />
+        <mesh filename="../meshes/pelvis.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -18,7 +18,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/pelvis.STL" />
+        <mesh filename="../meshes/pelvis.STL" />
       </geometry>
     </collision>
   </link>
@@ -31,7 +31,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/hip_roll_l_link.STL" />
+        <mesh filename="../meshes/hip_roll_l_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -40,7 +40,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/hip_roll_l_link.STL" />
+        <mesh filename="../meshes/hip_roll_l_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -60,7 +60,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/hip_pitch_l_link.STL" />
+        <mesh filename="../meshes/hip_pitch_l_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -69,7 +69,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/hip_pitch_l_link.STL" />
+        <mesh filename="../meshes/hip_pitch_l_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -89,7 +89,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/hip_yaw_l_link.STL" />
+        <mesh filename="../meshes/hip_yaw_l_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -98,7 +98,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/hip_yaw_l_link.STL" />
+        <mesh filename="../meshes/hip_yaw_l_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -118,7 +118,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/knee_pitch_l_link.STL" />
+        <mesh filename="../meshes/knee_pitch_l_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -127,7 +127,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/knee_pitch_l_link.STL" />
+        <mesh filename="../meshes/knee_pitch_l_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -147,7 +147,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/ankle_pitch_l_link.STL" />
+        <mesh filename="../meshes/ankle_pitch_l_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -156,7 +156,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/ankle_pitch_l_link.STL" />
+        <mesh filename="../meshes/ankle_pitch_l_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -176,7 +176,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/ankle_roll_l_link.STL" />
+        <mesh filename="../meshes/ankle_roll_l_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -185,7 +185,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/ankle_roll_l_link.STL" />
+        <mesh filename="../meshes/ankle_roll_l_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -205,7 +205,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/hip_roll_r_link.STL" />
+        <mesh filename="../meshes/hip_roll_r_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -214,7 +214,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/hip_roll_r_link.STL" />
+        <mesh filename="../meshes/hip_roll_r_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -234,7 +234,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/hip_pitch_r_link.STL" />
+        <mesh filename="../meshes/hip_pitch_r_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -243,7 +243,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/hip_pitch_r_link.STL" />
+        <mesh filename="../meshes/hip_pitch_r_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -263,7 +263,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/hip_yaw_r_link.STL" />
+        <mesh filename="../meshes/hip_yaw_r_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -272,7 +272,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/hip_yaw_r_link.STL" />
+        <mesh filename="../meshes/hip_yaw_r_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -292,7 +292,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/knee_pitch_r_link.STL" />
+        <mesh filename="../meshes/knee_pitch_r_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -301,7 +301,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/knee_pitch_r_link.STL" />
+        <mesh filename="../meshes/knee_pitch_r_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -321,7 +321,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/ankle_pitch_r_link.STL" />
+        <mesh filename="../meshes/ankle_pitch_r_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -330,7 +330,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/ankle_pitch_r_link.STL" />
+        <mesh filename="../meshes/ankle_pitch_r_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -350,7 +350,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/ankle_roll_r_link.STL" />
+        <mesh filename="../meshes/ankle_roll_r_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -359,7 +359,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/ankle_roll_r_link.STL" />
+        <mesh filename="../meshes/ankle_roll_r_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -379,7 +379,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/waist_yaw_link.STL" />
+        <mesh filename="../meshes/waist_yaw_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -388,7 +388,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/waist_yaw_link.STL" />
+        <mesh filename="../meshes/waist_yaw_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -408,7 +408,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/shoulder_pitch_l_link.STL" />
+        <mesh filename="../meshes/shoulder_pitch_l_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -417,7 +417,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/shoulder_pitch_l_link.STL" />
+        <mesh filename="../meshes/shoulder_pitch_l_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -437,7 +437,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/shoulder_roll_l_link.STL" />
+        <mesh filename="../meshes/shoulder_roll_l_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -446,7 +446,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/shoulder_roll_l_link.STL" />
+        <mesh filename="../meshes/shoulder_roll_l_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -466,7 +466,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/shoulder_yaw_l_link.STL" />
+        <mesh filename="../meshes/shoulder_yaw_l_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -475,7 +475,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/shoulder_yaw_l_link.STL" />
+        <mesh filename="../meshes/shoulder_yaw_l_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -495,7 +495,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/elbow_pitch_l_link.STL" />
+        <mesh filename="../meshes/elbow_pitch_l_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -504,7 +504,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/elbow_pitch_l_link.STL" />
+        <mesh filename="../meshes/elbow_pitch_l_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -524,7 +524,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/shoulder_pitch_r_link.STL" />
+        <mesh filename="../meshes/shoulder_pitch_r_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -533,7 +533,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/shoulder_pitch_r_link.STL" />
+        <mesh filename="../meshes/shoulder_pitch_r_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -553,7 +553,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/shoulder_roll_r_link.STL" />
+        <mesh filename="../meshes/shoulder_roll_r_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -562,7 +562,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/shoulder_roll_r_link.STL" />
+        <mesh filename="../meshes/shoulder_roll_r_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -582,7 +582,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/shoulder_yaw_r_link.STL" />
+        <mesh filename="../meshes/shoulder_yaw_r_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -591,7 +591,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/shoulder_yaw_r_link.STL" />
+        <mesh filename="../meshes/shoulder_yaw_r_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -611,7 +611,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/elbow_pitch_r_link.STL" />
+        <mesh filename="../meshes/elbow_pitch_r_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -620,7 +620,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/elbow_pitch_r_link.STL" />
+        <mesh filename="../meshes/elbow_pitch_r_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -640,7 +640,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/camera_head_link.STL" />
+        <mesh filename="../meshes/camera_head_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -649,7 +649,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/camera_head_link.STL" />
+        <mesh filename="../meshes/camera_head_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -668,7 +668,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/camera_body_front_link.STL" />
+        <mesh filename="../meshes/camera_body_front_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -677,7 +677,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/camera_body_front_link.STL" />
+        <mesh filename="../meshes/camera_body_front_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -696,7 +696,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/camera_body_back_link.STL" />
+        <mesh filename="../meshes/camera_body_back_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -705,7 +705,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/camera_body_back_link.STL" />
+        <mesh filename="../meshes/camera_body_back_link.STL" />
       </geometry>
     </collision>
   </link>
@@ -724,7 +724,7 @@
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/imu_link.STL" />
+        <mesh filename="../meshes/imu_link.STL" />
       </geometry>
       <material name="">
         <color rgba="0.752941176470588 0.752941176470588 0.752941176470588 1" />
@@ -733,7 +733,7 @@
     <collision>
       <origin xyz="0 0 0" rpy="0 0 0" />
       <geometry>
-        <mesh filename="package://tiangong2plus_urdf/meshes/imu_link.STL" />
+        <mesh filename="../meshes/imu_link.STL" />
       </geometry>
     </collision>
   </link>
